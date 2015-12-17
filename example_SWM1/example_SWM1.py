@@ -27,13 +27,13 @@ def SWM_sample(policy):
     #SWM.simulate() function signature is:
     #simulate(timesteps, policy=[0,0], random_seed=0, model_parameters={}, SILENT=False, PROBABILISTIC_CHOICES=True
 
-    sims = [SWM.simulate(200, policy, random.random(), SILENT=True) for i in range(10)]
+    sims = [SWM.simulate(200, policy, random.random(), SILENT=True) for i in range(20)]
 
-    data = [  sims[i]["Average State Value"]  for i in range(10) ] 
+    data = [  sims[i]["Average State Value"]  for i in range(20) ] 
 
     #now get mean and variance
     y = np.mean(data)
-    var = np.var(data)
+    var = np.std(data)
 
     return policy, y, var
 
@@ -44,7 +44,7 @@ def main():
     X = []
     y = []
     y_var = []
-    for i in range(25):
+    for i in range(50):
         coord = [random.uniform(-25,25), random.uniform(-25,25)]
         new_X, new_y, new_var = SWM_sample(coord)
         X.append(new_X)
@@ -54,9 +54,20 @@ def main():
     bounds = [[-25,25],[-25,25]]
 
     #instantiate a HBayesGP object
-    gp = HBayesGP.HBayesGP(X,y,y_var,bounds)
 
-    for i in range(20):
+    gp=0
+    USE_NUGGET = True
+
+    if USE_NUGGET:
+        #with nugget effect:
+        gp = HBayesGP.HBayesGP(X,y,y_var,bounds)
+    else:
+        #without nugget effect:
+        gp = HBayesGP.HBayesGP(X,y,bounds=bounds)
+
+
+
+    for i in range(100):
         #get a few suggestions, and sample from them
         next_coords = gp.suggest_next(number_of_suggestions=1)
         
@@ -65,11 +76,20 @@ def main():
             pass
         else:
             new_X, new_y, new_var = SWM_sample(next_coords[0])
-            gp.add_data([new_X], [new_y], [new_var])
+
+            if USE_NUGGET:
+                gp.add_data([new_X], [new_y], [new_var])
+            else:
+                gp.add_data([new_X], [new_y])
 
 
     #look at the best values it found
     gp.print_best_to_date()
+
+    #plot the GP
+    #plot_gp(self, dim0_scale, dim1_scale, divisions, dimN_values=None, dim0_index=0, dim1_index=1, title="", dim0_label="", dim1_label=""):
+    gp.plot_gp(      [-25,25],   [-25,25],        51,                0,            1,            0, title="SWM v1.3 Simulations", dim0_label="Policy Parameter on Weather", dim1_label="Policy Constant")
+
 
 
 

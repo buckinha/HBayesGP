@@ -5,6 +5,8 @@ from scipy.optimize import minimize
 import scipy.spatial.distance
 from utils.sphere_dist import sphere_dist
 from utils.Errors import InputError
+import matplotlib.pyplot as plt
+from matplotlib.colors import Colormap
 
 class HBayesGP:
     """
@@ -40,11 +42,12 @@ class HBayesGP:
         # in reverse
         #self.gp_theta_UB = (1.0 / (2.0 *  2.0  **2))
         #self.gp_theta_LB = (1.0 / (2.0 *  0.01 **2))
-        self.gp_theta_LB = (1.0 / (2.0 *  2.0  **2))
-        self.gp_theta_UB = (1.0 / (2.0 *  0.01 **2))
+        #self.gp_theta_LB = (1.0 / (2.0 *  2.0  **2))
+        #self.gp_theta_UB = (1.0 / (2.0 *  0.01 **2))
 
         #and instantiate the gp
-        self.gp = gaussian_process.GaussianProcess(theta0=self.gp_theta0, thetaL=self.gp_theta_LB, thetaU=self.gp_theta_UB, random_start=3)
+        #self.gp = gaussian_process.GaussianProcess(theta0=self.gp_theta0, thetaL=self.gp_theta_LB, thetaU=self.gp_theta_UB, random_start=3)
+        self.gp = gaussian_process.GaussianProcess(theta0=self.gp_theta0)
 
 
         #instantiate the data set
@@ -107,7 +110,7 @@ class HBayesGP:
         
         y_val, MSE = self.gp.predict(x, eval_MSE=True)
 
-        return y_val, MSE
+        return y_val[0], MSE[0]
 
     #add data to the model and re-fit the GP
     def add_data(self, X, y, y_var=None, NO_FIT=False):
@@ -138,7 +141,12 @@ class HBayesGP:
         None
 
         """
-        #check lenghts of the inputs
+
+        #check for y_var arguement
+        if not y_var:
+            y_var = [0.000000001] * len(y)
+
+        #check lengths of the inputs
         input_length = len(X)
         if not (   (len(X) == len(y)) and (len(y) == len(y_var))   ):
             #this is an error condition. All of the inputs must have equal length.
@@ -273,7 +281,7 @@ class HBayesGP:
 
 
         #and finally, if the suggestions list is too long...
-        #make a priority queue with the gp upper confidence as the prioirty
+        #make a priority queue with the gp upper confidence as the priority
         if len(suggestions) > number_of_suggestions:
             sugg_pq = Queue.PriorityQueue()
             for sugg in suggestions:
@@ -297,19 +305,157 @@ class HBayesGP:
         for g_best in self.global_bests.queue:
             print(str(g_best))
         
-    def plot_gp(self, dim0_index=0, dim1_index=1):
-        """ Short Description
+    def plot_gp(self, dim0_scale, dim1_scale, divisions, dimN_values=None, dim0_index=0, dim1_index=1, title="", dim0_label="", dim1_label=""):
+        """ Uses matplotlib to plot 2 dimensions of the GP to screen.
 
-        Long Description
+        Uses matplotlib to draw two, 2D views of the gaussian process. The first plot is
+        a contour plot of the GP's mean values throughout the region defined by the two
+        scale parameters and the divisons parameter. The second is another contour
+        plot with the same region and axis but showing the GP's variance at each point.
+
 
         PARAMETERS
         ----------
+        dim0_scale: Given in the form [lower_bound, uppper_bound], the scale over which
+            points should be sampled in the first dimension. The scale will be broken
+            up into a number of individal values equal to the 'divisions' parameter, with
+            the lowest being dim0_scale[0] and the highest being dim0_scale[1]
+
+        dim1_scale: Given in the form [lower_bound, uppper_bound], the scale over which
+            points should be sampled in the second dimension. The scale will be broken
+            up into a number of individal values equal to the 'divisions' parameter, with
+            the lowest being dim1_scale[0] and the highest being dim1_scale[1]
+
+        divisons: An integer representing how many points should be sampled along each 
+            dimension. I.e. if the scale is from 0 to 10, and divisions = 11, then the
+            function will choose 11 points equally spread between 0 and 10, inclusive.
+            This would work out to sampling exactly on the integers, [0,1,2,...,9,10]
+
+            If divisions is a list of two values, then the first value will be treated as
+            the divisions along the horizontal axis (dim0) and the second will be treated
+            as the divisions along the vertical axis.
+
+        dimN_values: A single value or a list of the values to be assigned to ALL of the 
+            x values except for the two which are referenced by dim0_index and dim1_index.  
+            If a list is given, it's length must be equal to the FULL LENGTH OF THE X
+            VECTORS used to fit the GP process. The values at dim0_index and dim1_index 
+            will be ignored, and the rest will be held constant. By default, this list is 
+            instantiated to all zeros.
+
+        dim0_index: (optional) the index of the component of X that you'd like plotted
+            on the horizontal axis. Default is index 0.
+
+        dim1_index: (optional) the index of the component of X that you'd like plotted
+            on the vertical axis. Default is index 1.
+
+        title: (optional) a string representing what you'd like as the graph title
+
+        dim0_label: (optional) a string representing the label you'd like on the horizontal
+            axis
+
+        dim1_label: (optional) a string representing the label you'd like on the vertical
+            axis
+
 
         RETURNS
         -------
+        None
 
         """
-        pass
+
+        #check if dimN_values was assigned:
+        full_coord = []
+        if dimN_values: 
+            #dimN_values was set, so parse it:
+            if isinstance(dimN_values, list):
+                #it's a list. Is it long enough?
+                if not len(dimN_values) >= len(self.X[0]):
+                    #it's not long enough. This is an error condition
+                    expr = "In HBayes.GP.plot_gp(), 'if not len(dimN_values) >= len(self.X[0]):'"
+                    msg = "The length of the parameter dimN_values is too short. It must be equal to the length"
+                    msg += " of the x vectors used to fit the gaussian process, or else a single value."
+                    detail1 =  "Expected Length = {0}".format(len(self.X[0]))
+                    detail2 =  "Length of Arguement Recieved = {0}".format(len(dimN_values))
+                    msg = msg + "\n" + detail1 + "\n" + detail2
+                    raise InputError(expr, msg)
+
+                #didn't raise an exception if we're here, so the list is of an acceptable length
+                #so fill the full_coord array from dimN_values
+                full_coord = dimN_values[:len(self.X[0])]
+
+            #dimN_values was set, but is not a list, so assume it's a numeric value
+            full_coord = [dimN_values] * len(self.X[0])
+
+        else:
+            #none was passed, so make a vector of zeros
+            full_coord = [0.0] * len(self.X[0])
+        
+
+        #parse divisions
+        divisions_x = 0
+        divisions_y = 0
+        if isinstance(divisions, list):
+            #it's a list, so grab the first two values and assign them to x and y
+            divisions_x = divisions[0]
+            divisions_y = divisions[1]
+        else:
+            #its not a list, (I assume its an integer?), so assign both axis the 
+            # same value.
+            divisions_x = divisions
+            divisions_y = divisions 
+
+        #get the x and y coordinates
+        x_coords = np.linspace(dim0_scale[0],dim0_scale[1],divisions_x)
+        y_coords = np.linspace(dim1_scale[0],dim1_scale[1],divisions_y)
+
+        #create the Z_mean and Z_var arrays
+        #TODO: find out how the Z matrix is treated in matplotlib.pyplot.contour...
+        # is it [[column], [column], [column]] or [[row], [row], [row]]?
+        Z_mean = [ [0.0] * divisions_x for i in range(divisions_y)  ]
+        Z_var  = [ [0.0] * divisions_x for i in range(divisions_y)  ]
+
+        #fill the Z arrays
+        for x in range(divisions_x):
+            for y in range(divisions_y):
+                _this_coord = full_coord[:]
+                _this_coord[dim0_index] = x_coords[x]
+                _this_coord[dim1_index] = y_coords[y]
+                _mean, _MSE = self.gp.predict(_this_coord, eval_MSE=True)
+
+                #TODO: check if it should be Z_mean[x][y] or [y][x]
+                Z_mean[y][x] = _mean[0]
+                Z_var[y][x] = _MSE[0]
+
+
+        #plot the arrays
+        plasma = Colormap("plasma")
+        #for a set number of contours, N:
+        #C = plt.contour(X=x_coords,Y=y_coords, Z=, N=, alpha=float, cmap=plasma, levels=[], antialiased=True, linewidths=2, linestyles='solid')
+        #for a specific set of levels, V = [val, val, ... val]:
+        #C = plt.contour(X=x_coords,Y=y_coords, Z=, V=, alpha=float, cmap=plasma, levels=[], antialiased=True, linewidths=2, linestyles='solid')
+
+        plt.figure(1)
+        #CF_mean = plt.contourf(X=x_coords,Y=y_coords, Z=Z_mean, N=20, cmap=plasma, antialiased=True)
+        #C_mean =  plt.contour(X=x_coords,Y=y_coords, Z=Z_mean, N=20, color='black', antialiased=True, linewidths=2, linestyles='solid')
+        #CF_mean = plt.contourf(Z=Z_mean, N=20, cmap=plasma, antialiased=True)
+        
+        #CF_mean = plt.contourf(x_coords,y_coords,Z_mean,N=40)
+        C_mean =  plt.contour(x_coords,y_coords,Z_mean, N=40, color="black")
+        plt.title("GP Mean: " + str(title))
+        plt.xlabel(str(dim0_label))
+        plt.ylabel(str(dim1_label))
+        plt.show()
+
+        # plt.figure(2)
+        # CF_var = plt.contourf(X=x_coords,Y=y_coords, Z=Z_var, N=20, cmap=plasma, antialiased=True)
+        # C_var =  plt.contour(X=x_coords,Y=y_coords, Z=Z_var, N=20, color='black', antialiased=True, linewidths=2, linestyles='solid')
+        # plt.title("GP MSE: " + str(title))
+        # plt.xlabel(str(dim0_label))
+        # plt.ylabel(str(dim1_label))
+        # plt.show()
+
+
+
         
     def plot_gp_to_file(self, filename, dim0_index=0, dim1_index=1):
         """ Short Description
@@ -622,4 +768,4 @@ class HBayesGP:
 
         _y_val, _MSE = self.gp.predict(x,eval_MSE=True)
 
-        return _y_val + 1.96 * _MSE
+        return _y_val[0] + 1.96 * _MSE[0]
