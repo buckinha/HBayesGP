@@ -1,0 +1,27 @@
+#Step 1
+#create a dataset with replicates and variance estimates
+
+#Step 2
+#fit a gaussian process over the data using point variances
+
+#Step 3
+#use L-BFGS-B to climb down the lower confidence bound
+# - multiple restarts, probably with grid or latin square?
+
+#Step 4
+#use the lowest discovered point on the lower confidence bound
+# as the new sampling point.
+# - if multiple low points are found for different decents, why
+#   not sample on all of them?
+
+#Step 5
+#repeat from Step 2, adding the new samples to the set.
+# - but Stop Eventually
+
+
+
+#OPTIONALLY
+# - Add the gaussian hyperparameters to the optimization routine
+#   This would mean fitting multiple GP to the data, and, what?
+#   Averaging?... Probably probability weighed sums?
+# - Using "fantasies" to add more samples to the set to be simulated

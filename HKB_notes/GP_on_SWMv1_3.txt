@@ -1,0 +1,48 @@
+################################
+##  Fitting a GP to SWM v1.3  ##
+################################
+
+Initial Sampling:
+  1) Draw some number of random starting policies within the sphere of interest
+  2) Simulate some number of pathways at each policy
+  3) Get the average value and variance of each set of simulations
+  4) Record best values seen (maybe top 3?)
+
+Forming the GP
+  1) Transform the point-wise variances to fit the nugget properly
+  2) Fit a GP with the nugget
+  3) Draw some number of start positions for gradient descent
+  4) Run L-BFGS-B from each of these start points to find new sampling spots
+  5) Eliminate new sampling locations that are redundant
+  6) Eliminate sampling points whose predicted variation is lower than some threshold
+  STOPPING CRITERIA:
+     Stop if step 6 eliminated all sampling locations.
+  6) Draw new sample sets at each of these locations and add them to the data set
+  7) Check if any of the newly sampled pathway sets are new maxima (or in the top 3, etc...)
+  STOPPING CRITERIA:
+     Stop if no new best has been found after some number of loops
+     Stop if the maximum number of total simulations has been reached (if any is max is enforced)
+  8) REPEAT
+
+
+
+ANALYSES
+Graph SWM surface vs GPs which were formed with varying number of total simulations
+Graph GP surfaces alongside a heat map of GP variation, possbly marking sampling points
+
+
+
+
+
+
+class HBayesGP:
+  def __init__(self)
+  def fit(self,X,y,y_var)
+  def add_data(self,X,y,y_var)
+  def suggest_next(self,number_of_suggestions)
+  def plot_gp(self,dim0_index=0, dim1_index=1)
+  def set_sampler(self,sampler_function)
+  def auto_next(self,number_of_new_samples=1)
+  def save_data_set(self,filename)
+  def load_data_set(self,filename)
+  def set_suggest_method(self,method_name)
