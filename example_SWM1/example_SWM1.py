@@ -69,7 +69,7 @@ def main():
 
     for i in range(100):
         #get a few suggestions, and sample from them
-        next_coords = gp.suggest_next(number_of_suggestions=1)
+        next_coords = gp.suggest_next(number_of_suggestions=4)
         
         #check if suggest succeeded
         if len(next_coords) == 0:
@@ -87,9 +87,15 @@ def main():
     gp.print_best_to_date()
 
     #plot the GP
+    #building contour level sets, to aid visualization
+    contours=[np.linspace(-10,15,40), np.linspace(0,30,40), np.linspace(-10,50,40)]
     #plot_gp(self, dim0_scale, dim1_scale, divisions, dimN_values=None, dim0_index=0, dim1_index=1, title="", dim0_label="", dim1_label=""):
-    gp.plot_gp(      [-25,25],   [-25,25],        51,                0,            1,            0, title="SWM v1.3 Simulations", dim0_label="Policy Parameter on Weather", dim1_label="Policy Constant")
+    gp.plot_gp(      [-25,25],   [-25,25],       200,                0,            1,            0, title="", dim0_label="Policy Parameter on Weather", dim1_label="Policy Constant", contour_levels=contours)
 
+
+    # -10 to 15
+    # 0 to 30
+    #-10 to 50
 
 
 

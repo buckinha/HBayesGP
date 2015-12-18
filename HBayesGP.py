@@ -197,7 +197,7 @@ class HBayesGP:
                 self._record_if_better(y_remaining[i], y_var_remaining[i], X_remaining[i])
 
     #Suggests coordinates where samples should next be drawn.
-    def suggest_next(self,number_of_suggestions, minimum_climbs=4):
+    def suggest_next(self,number_of_suggestions, minimum_climbs=40):
         """ Suggests coordinates where samples should next be drawn.
 
         Using the chosen (or default) sampler method, this heuristic will
@@ -305,7 +305,7 @@ class HBayesGP:
         for g_best in self.global_bests.queue:
             print(str(g_best))
         
-    def plot_gp(self, dim0_scale, dim1_scale, divisions, dimN_values=None, dim0_index=0, dim1_index=1, title="", dim0_label="", dim1_label=""):
+    def plot_gp(self, dim0_scale, dim1_scale, divisions, dimN_values=None, dim0_index=0, dim1_index=1, title="", dim0_label="", dim1_label="", contour_levels=None):
         """ Uses matplotlib to plot 2 dimensions of the GP to screen.
 
         Uses matplotlib to draw two, 2D views of the gaussian process. The first plot is
@@ -356,6 +356,10 @@ class HBayesGP:
         dim1_label: (optional) a string representing the label you'd like on the vertical
             axis
 
+        contour_levels: (optional, default=None) A list of three lists, specifying the contour
+            levels desired for each of the three plots. The first sub-list is for the GP mean,
+            the second is for the GP MSE, and the third is for the plot of the GP upper
+            confidence limit.
 
         RETURNS
         -------
@@ -413,6 +417,7 @@ class HBayesGP:
         # is it [[column], [column], [column]] or [[row], [row], [row]]?
         Z_mean = [ [0.0] * divisions_x for i in range(divisions_y)  ]
         Z_var  = [ [0.0] * divisions_x for i in range(divisions_y)  ]
+        Z_uconf  = [ [0.0] * divisions_x for i in range(divisions_y)  ]
 
         #fill the Z arrays
         for x in range(divisions_x):
@@ -425,35 +430,58 @@ class HBayesGP:
                 #TODO: check if it should be Z_mean[x][y] or [y][x]
                 Z_mean[y][x] = _mean[0]
                 Z_var[y][x] = _MSE[0]
+                Z_uconf[y][x] = _mean[0]  + 1.96*_MSE[0]
 
 
         #plot the arrays
-        plasma = Colormap("plasma")
+        plt.rcParams['image.cmap'] = 'nipy_spectral'
+        #plasma = Colormap("plasma",N=40)
         #for a set number of contours, N:
         #C = plt.contour(X=x_coords,Y=y_coords, Z=, N=, alpha=float, cmap=plasma, levels=[], antialiased=True, linewidths=2, linestyles='solid')
         #for a specific set of levels, V = [val, val, ... val]:
         #C = plt.contour(X=x_coords,Y=y_coords, Z=, V=, alpha=float, cmap=plasma, levels=[], antialiased=True, linewidths=2, linestyles='solid')
 
-        plt.figure(1)
+        plt.figure(1,figsize=(6,8))
         #CF_mean = plt.contourf(X=x_coords,Y=y_coords, Z=Z_mean, N=20, cmap=plasma, antialiased=True)
         #C_mean =  plt.contour(X=x_coords,Y=y_coords, Z=Z_mean, N=20, color='black', antialiased=True, linewidths=2, linestyles='solid')
         #CF_mean = plt.contourf(Z=Z_mean, N=20, cmap=plasma, antialiased=True)
-        
-        #CF_mean = plt.contourf(x_coords,y_coords,Z_mean,N=40)
-        C_mean =  plt.contour(x_coords,y_coords,Z_mean, N=40, color="black")
+        plt.subplot(311)
+        if contour_levels:
+            CF_mean = plt.contourf(x_coords,y_coords,Z_mean,V=contour_levels[0], antialiased=True)
+        else:
+            CF_mean = plt.contourf(x_coords,y_coords,Z_mean,N=40, antialiased=True)
+        CB_mean = plt.colorbar(CF_mean, shrink=0.8, extend='both')
+        #C_mean =  plt.contour(x_coords,y_coords,Z_mean, N=40)
         plt.title("GP Mean: " + str(title))
         plt.xlabel(str(dim0_label))
         plt.ylabel(str(dim1_label))
+
+        plt.subplot(312)
+        if contour_levels:
+            CF_var = plt.contourf(x_coords,y_coords, Z_var, V=contour_levels[1], antialiased=True)
+        else:
+            CF_var = plt.contourf(x_coords,y_coords, Z_var, N=20, antialiased=True)
+        CB_var = plt.colorbar(CF_var, shrink=0.8, extend='both')
+        plt.title("GP MSE: " + str(title))
+        plt.xlabel(str(dim0_label))
+        plt.ylabel(str(dim1_label))
+        
+        plt.subplot(313)
+        if contour_levels:
+            CF_uconf = plt.contourf(x_coords,y_coords, Z_uconf, V=contour_levels[2], antialiased=True)
+        else:
+            CF_uconf = plt.contourf(x_coords,y_coords, Z_uconf, N=20, antialiased=True)
+        CB_uconf = plt.colorbar(CF_uconf, shrink=0.8, extend='both')
+        #C_var =  plt.contour(X=x_coords,Y=y_coords, Z=Z_var, N=20, color='black', antialiased=True, linewidths=2, linestyles='solid')
+        plt.title("GP Upper Confidence Limit: " + str(title))
+        plt.xlabel(str(dim0_label))
+        plt.ylabel(str(dim1_label))
+
+
+        plt.tight_layout()
         plt.show()
 
-        # plt.figure(2)
-        # CF_var = plt.contourf(X=x_coords,Y=y_coords, Z=Z_var, N=20, cmap=plasma, antialiased=True)
-        # C_var =  plt.contour(X=x_coords,Y=y_coords, Z=Z_var, N=20, color='black', antialiased=True, linewidths=2, linestyles='solid')
-        # plt.title("GP MSE: " + str(title))
-        # plt.xlabel(str(dim0_label))
-        # plt.ylabel(str(dim1_label))
-        # plt.show()
-
+        plt.close()
 
 
         

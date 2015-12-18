@@ -310,9 +310,9 @@ def sanitize_policy(policy):
         pol = policy[:]
     else:
         #it's not a list, so find out what string it is
-        if policy == 'LB':    pol = [-20,0]
-        elif policy == 'SA':  pol = [ 20,0]
-        elif policy == 'CT':  pol = [  0,0]
+        if policy == "LB":    pol = [-20,0]
+        elif policy == "SA":  pol = [ 20,0]
+        elif policy == "CT":  pol = [  0,0]
         else: pol = [0,0] #using CT as a catch-all for when the string is "MIXED_CT" or whatnot
 
     return pol
