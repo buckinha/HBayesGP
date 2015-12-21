@@ -17,37 +17,24 @@ class HBayesGP:
         
         self.redundancy_dist = 0.2
         self.VERBOSE = False
+        
+        #creating variables to hold the hyper parameters
+        self.gp_length_scale = 0.0
+        self.gp_theta_UB = None
+        self.gp_theta_LB = None
+        self.gp_theta0 = 0.0
 
-        #the sklearn gp implementation does it's squared exponential covariance function
-        # as 
-        #                                   n
-        # theta, d --> r(theta, d) = exp(  sum  -1 * theta_i * (d_i)^2 )
-        #                                 i = 1
-        #
-        #
-        #whereas what I want to work with is:
-        #                                   n
-        # theta, d --> r(theta, d) = exp(  sum  -1 * (1 / (2 * l^2) * (d_i)^2 )
-        #                                 i = 1
-        #
-        #
-        #So then, for a characteristic length-scale 'l', as per Rasmussen and Williams,
-        #I just need to calculate theta as:
-        # 
-        # theta = (1 / (2 * l^2)
-        self.gp_length_scale = 0.2
-        self.gp_theta0 = (1.0 / (2.0 * self.gp_length_scale**2))
-        #and set some reasonable bounds on what the length scale could possibly be
-        #hmm... but this will make them switch places, ordinally, so I'll input them 
-        # in reverse
-        #self.gp_theta_UB = (1.0 / (2.0 *  2.0  **2))
-        #self.gp_theta_LB = (1.0 / (2.0 *  0.01 **2))
-        #self.gp_theta_LB = (1.0 / (2.0 *  2.0  **2))
-        #self.gp_theta_UB = (1.0 / (2.0 *  0.01 **2))
+        #set a first length scale, which calculates self.gp_theta0
+        self.set_characteristic_length_scale(CLS=1.0)
 
         #and instantiate the gp
-        #self.gp = gaussian_process.GaussianProcess(theta0=self.gp_theta0, thetaL=self.gp_theta_LB, thetaU=self.gp_theta_UB, random_start=3)
-        self.gp = gaussian_process.GaussianProcess(theta0=self.gp_theta0)
+        #if the MLE upper AND lower bounds are defined, then set them too
+        self.gp = None
+        if self.gp_theta_LB and self.gp_theta_UB:
+            self.gp = gaussian_process.GaussianProcess(theta0=self.gp_theta0, thetaL=self.gp_theta_LB, thetaU=self.gp_theta_UB, random_start=3)
+        else:
+            #otherwise, set only with the theta0 value
+            self.gp = gaussian_process.GaussianProcess(theta0=self.gp_theta0)
 
 
         #instantiate the data set
@@ -299,12 +286,14 @@ class HBayesGP:
 
         return suggestions
 
+    #print the list of best coordinates so far discovered
     def print_best_to_date(self):
         #TODO, fix this please (really messy output)
         print("Printing best values found so far:")
         for g_best in self.global_bests.queue:
             print(str(g_best))
         
+    #use matplotlib to show the mean, variance, and uppeer conf. limit of the GP
     def plot_gp(self, dim0_scale, dim1_scale, divisions, dimN_values=None, dim0_index=0, dim1_index=1, title="", dim0_label="", dim1_label="", contour_levels=None):
         """ Uses matplotlib to plot 2 dimensions of the GP to screen.
 
@@ -483,7 +472,84 @@ class HBayesGP:
 
         plt.close()
 
+    #setters for the gp's characteristic length scale
+    def set_characteristic_length_scale(self, CLS, MLE_upper=None, MLE_lower=None):
+        """Sets the (C)haracteristic (L)ength (S)cale of the gaussian process
 
+        This is the same as set_CLS(), but wordier. ;)
+
+        The characteristic length scale, as defined by Rasmussen and Williams, can be set
+        with this function. Note that this value really only makes sense when used with
+        covariance functions which actually make use of a CLS. 
+
+        Since the sklearn.gaussian_process implementation wraps the CLS into a larger
+        variable with other constants, this function will do the neccesary math to convert
+        from CLS to sklearn's theta value.
+
+        PARAMETERS
+        ----------
+        CLS: numeric. A characteristic length scale
+        MLE_upper:  The upper bound on the maximum likelihood estimatation of CLS. If none
+            (default), then MLE will not be used
+        MLE_lower:  The lower bound on the maximum likelihood estimatation of CLS. If none
+            (default), then MLE will not be used
+
+        RETURNS
+        -------
+        None
+
+        """
+        self.set_CLS(CLS, MLE_upper, MLE_lower)
+    def set_CLS(self, CLS, MLE_upper=None, MLE_lower=None):
+        """Sets the (C)haracteristic (L)ength (S)cale of the gaussian process
+
+        The characteristic length scale, as defined by Rasmussen and Williams, can be set
+        with this function. Note that this value really only makes sense when used with
+        covariance functions which actually make use of a CLS. 
+
+        Since the sklearn.gaussian_process implementation wraps the CLS into a larger
+        variable with other constants, this function will do the neccesary math to convert
+        from CLS to sklearn's theta value.
+
+        PARAMETERS
+        ----------
+        CLS: numeric. A characteristic length scale
+        MLE_upper:  The upper bound on the maximum likelihood estimatation of CLS. If none
+            (default), then MLE will not be used
+        MLE_lower:  The lower bound on the maximum likelihood estimatation of CLS. If none
+            (default), then MLE will not be used
+
+        RETURNS
+        -------
+        None
+
+        """
+        #the sklearn gp implementation does it's squared exponential covariance function
+        # as 
+        #                                   n
+        # theta, d --> r(theta, d) = exp(  sum  -1 * theta_i * (d_i)^2 )
+        #                                 i = 1
+        #
+        #
+        #whereas what I want to work with is:
+        #                                   n
+        # theta, d --> r(theta, d) = exp(  sum  -1 * (1 / (2 * l^2) * (d_i)^2 )
+        #                                 i = 1
+        #
+        #
+        #So then, for a characteristic length-scale 'l', as per Rasmussen and Williams,
+        #I just need to calculate theta as:
+        # 
+        # theta = (1 / (2 * l^2)
+        self.gp_length_scale = CLS
+        self.gp_theta0 = (1.0 / (2.0 * self.gp_length_scale**2))
+
+        #if MLE bounds are BOTH defined:
+        if MLE_lower and MLE_upper:
+            #this transformation will make them switch places, cardinally, so I'll input them 
+            # in reverse
+            self.gp_theta_LB = (1.0 / (2.0 *  MLE_upper  **2))
+            self.gp_theta_UB = (1.0 / (2.0 *  MLE_lower **2))
         
     def plot_gp_to_file(self, filename, dim0_index=0, dim1_index=1):
         """ Short Description
@@ -602,6 +668,13 @@ class HBayesGP:
 
         #set the nugget
         self.gp.nugget = self.nugget[:]
+
+        #set the theta values
+        self.gp.theta0 = self.gp_theta0
+        #and set the MLE bounds if they have been given
+        if self.gp_theta_LB and self.gp_theta_UB:
+            self.gp.thetaL = self.gp_theta_LB
+            self.gp.thetaU = self.gp_theta_UB
 
         #fit the underlying sklearn gp
         self.gp.fit(self.X, self.y)
