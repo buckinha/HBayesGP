@@ -19,9 +19,9 @@ def SWM_sample(policy):
 
     RETURNS
     -------
-    X: the policy gven
     y: the average value of these simulations
     var: the variance of the values of these simulations
+    X: the policy gven
     """
 
     #SWM.simulate() function signature is:
@@ -35,7 +35,7 @@ def SWM_sample(policy):
     y = np.mean(data)
     var = np.std(data)
 
-    return policy, y, var
+    return y, var, policy
 
 
 def main():
@@ -46,7 +46,7 @@ def main():
     y_var = []
     for i in range(50):
         coord = [random.uniform(-25,25), random.uniform(-25,25)]
-        new_X, new_y, new_var = SWM_sample(coord)
+        new_y, new_var, new_X = SWM_sample(coord)
         X.append(new_X)
         y.append(new_y)
         y_var.append(new_var)
@@ -75,7 +75,7 @@ def main():
         if len(next_coords) == 0:
             pass
         else:
-            new_X, new_y, new_var = SWM_sample(next_coords[0])
+            new_y, new_var, new_X = SWM_sample(next_coords[0])
 
             if USE_NUGGET:
                 gp.add_data([new_X], [new_y], [new_var])

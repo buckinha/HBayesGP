@@ -15,7 +15,7 @@ class HBayesGP:
     def __init__(self,X,y,y_var=None,bounds=None):
 
         
-        self.redundancy_dist = 0.2
+        self.redundancy_dist = 0.5
         self.VERBOSE = False
         
         #creating variables to hold the hyper parameters
@@ -42,6 +42,14 @@ class HBayesGP:
         self.y = []
         self.y_var = []
         self.nugget = []
+
+        #arrays for keeping track of history (esp. when autosampling is underway)
+        self.history_global_best = []
+        self.history_global_best_coords = []
+        self.history_sample_size = []
+        self.current_global_best = float("-inf")
+        self.current_global_best_coord = []
+
         #everything that add_data needs should now be instantiated
         #but send a warning shot that this is the first time, so that add_data doesn't
         #try to record the best values to the (as-of-yet non-existant) priority queue
@@ -67,6 +75,12 @@ class HBayesGP:
         #loop over the data set and fill the queue, since we skipped this before
         for i in range(len(self.y)):
             self._record_if_better(self.y[i],self.y_var[i],self.X[i])
+
+
+        
+
+        #setting up the autosampler function handle
+        self.autosampler = None 
 
 
     ### PUBLIC FUNCTIONS ###
@@ -171,17 +185,25 @@ class HBayesGP:
             if not NO_FIT:
                 self._fit()
 
+            #and now, if the priority queue has been instantiated, see if any of these values are global bests
+            if not self._NO_RECORDING_BEST:
+                #loop over the data set and fill the queue
+                for i in range(added):
+                    self._record_if_better(y_remaining[i], y_var_remaining[i], X_remaining[i])
+
+                #update the analysis history
+                self.history_sample_size.append(len(self.y))
+                self.history_global_best.append(self.current_global_best)
+                self.history_global_best_coords.append(self.current_global_best_coord)
+
         else:
             if self.VERBOSE:
                 print("WARNING: HBayes.GP.add_data():")
                 print("  All additional inputs were redundant with previous inputs.")
                 print("  No new data were added to the model.")
 
-        #and now, if the priority queue has been instantiated, see if any of these values are global bests
-        if not self._NO_RECORDING_BEST:
-            #loop over the data set and fill the queue
-            for i in range(added):
-                self._record_if_better(y_remaining[i], y_var_remaining[i], X_remaining[i])
+
+
 
     #Suggests coordinates where samples should next be drawn.
     def suggest_next(self,number_of_suggestions, minimum_climbs=40):
@@ -225,18 +247,24 @@ class HBayesGP:
 
         """
 
+        #ensure the latest data has been used to fit the gp
+        #self._fit()
+
         #instantiate a list to hold valid suggestions
         suggestions = []
 
         #do climbs from global bests
         #accessing the PriorityQueue.queue gets the underlying array, so that I can
         # iterate over them in place (but un-ordered) without popping any off.
-        for g_best in self.global_bests.queue:
+        if False:
+            for g_best in self.global_bests.queue:
 
-            #do a climb from g_best
-            ending_point = minimize(self._max_conf, x0=g_best[2], method='L-BFGS-B', bounds=self.bounds).x
-            #add the result.x to the list
-            suggestions.append(ending_point)
+                #do a climb from g_best
+                #ending_point = minimize(self._max_conf, x0=g_best[2], method='L-BFGS-B', bounds=self.bounds).x
+                ending_point = self._climb_uconf(g_best[2])
+
+                #add the result.x to the list
+                suggestions.append(ending_point)
 
 
         #do climbs from random starting points
@@ -247,10 +275,22 @@ class HBayesGP:
             starting_point = self._rand_coord()
 
             #do the climb
-            ending_point = minimize(self._max_conf, x0=starting_point, method='L-BFGS-B', bounds=self.bounds).x
+            #ending_point = minimize(self._max_conf, x0=starting_point, method='L-BFGS-B', bounds=self.bounds).x
+            ending_point = self._climb_uconf(starting_point)
 
             #add the result.x to the list
             suggestions.append(ending_point)
+
+
+        #do climbs from previously sampled points
+        for x_coord in self.X:
+            #do the climb
+            #ending_point = minimize(self._max_conf, x0=x_coord, method='L-BFGS-B', bounds=self.bounds).x
+            ending_point = self._climb_uconf(x_coord)
+
+            #add the result.x to the list
+            suggestions.append(ending_point)
+
 
 
         #eliminate redundant suggestions
@@ -272,7 +312,10 @@ class HBayesGP:
         if len(suggestions) > number_of_suggestions:
             sugg_pq = Queue.PriorityQueue()
             for sugg in suggestions:
-                sugg_pq.put([self._max_conf(sugg), sugg[:]])
+                #since the max_upper_conf can be flat, add a little noise to
+                #help ensure that this points are "different" for the pqueue
+                _val = self._max_conf(sugg) + random.uniform(-0.00005,0.00005)
+                sugg_pq.put([_val, sugg[:]])
 
             #now pull values off until the length is equal to what we want
             while sugg_pq.qsize() > number_of_suggestions:
@@ -472,6 +515,39 @@ class HBayesGP:
 
         plt.close()
 
+    #plot sample size vs global best found as a line graph
+    def plot_history(self):
+        """Plots the object's history of sample size vs global best.
+
+        Each time data is added, the sample size and global best value actually seen
+        (not predicted) is appended to a history list. This function plots the two 
+        histories, which should show how the global best increases as more and more
+        data is added (ostensibly by sampling new coordinates of the GP).
+
+        PARAMETERS
+        ----------
+        None
+
+        RETURNS
+        -------
+        None
+
+        """
+
+        #draw the graph
+        plt.plot(self.history_sample_size, self.history_global_best)
+        plt.title("Sample Size vs Best Value Found")
+        plt.xlabel("Sample Size")
+        plt.ylabel("Best Value Found")
+        plt.show()
+
+    #plot 2 dimensions of the data points themselves
+    def plot_data_points(self, dim0_index=0, dim1_index=1):
+        points_x = [val[dim0_index] for val in self.X]
+        points_y = [val[dim1_index] for val in self.X]
+        plt.scatter(points_x, points_y)
+        plt.show()
+
     #setters for the gp's characteristic length scale
     def set_characteristic_length_scale(self, CLS, MLE_upper=None, MLE_lower=None):
         """Sets the (C)haracteristic (L)ength (S)cale of the gaussian process
@@ -565,33 +641,89 @@ class HBayesGP:
         """
         pass
         
+    #set an autosampling function
     def set_auto_sampler(self,sampler_function):
-        """ Short Description
+        """Set a function which takes a gp coordinate and returns and experimental value
 
-        Long Description
+        If data can be produced by a function call (as with a simulation), then an auto
+        sampling regime can be set up. A function handle must be given in the following
+        form:
+                y, y_var, X = function_name(X)
+
+        Where
+            y is the dependent variable/experimental result
+            y_var is the variance associated with y. It can be set to None if no variances
+                are available.
+            X is the coordinate which is passed in and also returned.
+
 
         PARAMETERS
         ----------
+        sampler_function: a function handle of the form: y, y_var, X = function_name(X)
 
         RETURNS
         -------
+        None
 
         """
-        pass
+        
+        self.autosampler = sampler_function
         
     def auto_next(self,number_of_new_samples=1):
-        """ Short Description
+        """Uses the autosampling function to choose a new point (or points) and samples it (them).
 
-        Long Description
+        Once an autosampler is set (using HBayesGP.set_auto_sampler()), this function allows for
+        some number of new sampling points to be choosen and sampled with the sampler function.
+        If more than one new sample is requested, they are done simultaneously, not sequentially.
+        This means that the suggestion protocol will come up with the n best new coordinates it 
+        can find and has them sampled all at once. The GP is refit after ALL of them have been
+        added to the data set.  To do it sequentially, run auto_next() in a loop.
 
         PARAMETERS
         ----------
+        number_of_new_samples: Integer, default=1. How many samples to choose and run simultaneously.
 
         RETURNS
         -------
+        best_y: Best value found to date
 
         """
-        pass
+
+        #has an autosampling function been set?
+        if self.autosampler:
+            #hurray.
+            pass
+        else:
+            print("WARNING: No Autosampler has been set. Use HBayesGP.set_auto_sampler().")
+            print("  (error generated in HBayesGP.auto_next()")
+            return float("-inf")
+
+        
+        ### CHOOSE SAMPLING COORDINATES ###
+
+        #loop over all current sampling positions and do a hill-climb on the upper confidence
+        # limit
+        #TODO make this capable to use future choosers other than the upper confidence limit.
+        suggestions = self.suggest_next(number_of_new_samples)
+
+
+        ### RUN SAMPLES ###
+        new_y_vals = []
+        new_y_vars = []
+        new_X_vals = []
+        for s in suggestions:
+            _y, _y_var, _x = self.autosampler(s)
+            new_y_vals.append(_y)
+            new_y_vars.append(_y_var)
+            new_X_vals.append(_x)
+
+
+        ### UPDATE GP, HISTORY, ETC... ###
+        self.add_data(new_X_vals,new_y_vals,new_y_vars)
+
+
+        return self.current_global_best
+
         
     def save_data_set(self,filename):
         """ Short Description
@@ -687,6 +819,13 @@ class HBayesGP:
         #remove the lowest of these best values to keep the list the same length
         if self.global_bests.qsize() >= self.global_bests_count:
             throw_away = self.global_bests.get()
+
+        #and check against the single known best
+        if y > self.current_global_best:
+            #it's better, so record all the bits
+            self.current_global_best = y
+            self.current_global_best_coord = x[:]
+
 
     #Determine whether a coordinate close to this one already exists in a set
     def _coord_is_redundant(self, coord, compare_to_these, distance):
@@ -870,3 +1009,24 @@ class HBayesGP:
         _y_val, _MSE = self.gp.predict(x,eval_MSE=True)
 
         return _y_val[0] + 1.96 * _MSE[0]
+
+
+    def _climb_uconf(self,x):
+        """Does and L-BFGS-B hill-climb up the upper confidence-limit surface
+
+        PARAMETERS
+        ----------
+        x: the x vector from which to start the climb
+
+        RETURNS
+        -------
+        conf: the value of the upper 95 percent confidence limit
+
+        """
+        def neg_uconf(x):
+            return self._max_conf(x) * -1.0
+
+        result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.bounds)
+
+
+        return result.x
