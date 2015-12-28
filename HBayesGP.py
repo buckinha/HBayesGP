@@ -85,34 +85,6 @@ class HBayesGP:
 
     ### PUBLIC FUNCTIONS ###
 
-    #use the gp to predict the value of y at coordinates x
-    def predict(x):
-        """ Predicts the y value and variance from the gaussian process at coordinate x
-
-        PARAMETERS
-        ----------
-        x: the coordinate (explanatory/independent variables) at which to make a prediction
-
-        RETURNS
-        -------
-        y_val: the predicted y value. This is the mean of the gaussian process at this x
-            coordinate.
-
-        MSE: the mean squared error of teh gaussian process at this x coordinate. Upper and
-            lower confidence intervals will be approximately (y_val +/- 1.96*MSE)
-
-        """
-
-        #check if there's any data yet
-        if len(self.X) == 0:
-            if self.VERBOSE:
-                print("Cannot make predictions without specifying fit data. Try HBayesGP.add_data()")
-            return 0, 0
-        
-        y_val, MSE = self.gp.predict(x, eval_MSE=True)
-
-        return y_val[0], MSE[0]
-
     #add data to the model and re-fit the GP
     def add_data(self, X, y, y_var=None, NO_FIT=False):
         """ Adds data to the underlying gaussian process and re-fits
@@ -202,8 +174,33 @@ class HBayesGP:
                 print("  All additional inputs were redundant with previous inputs.")
                 print("  No new data were added to the model.")
 
+    #use the gp to predict the value of y at coordinates x
+    def predict(x):
+        """ Predicts the y value and variance from the gaussian process at coordinate x
 
+        PARAMETERS
+        ----------
+        x: the coordinate (explanatory/independent variables) at which to make a prediction
 
+        RETURNS
+        -------
+        y_val: the predicted y value. This is the mean of the gaussian process at this x
+            coordinate.
+
+        MSE: the mean squared error of teh gaussian process at this x coordinate. Upper and
+            lower confidence intervals will be approximately (y_val +/- 1.96*MSE)
+
+        """
+
+        #check if there's any data yet
+        if len(self.X) == 0:
+            if self.VERBOSE:
+                print("Cannot make predictions without specifying fit data. Try HBayesGP.add_data()")
+            return 0, 0
+        
+        y_val, MSE = self.gp.predict(x, eval_MSE=True)
+
+        return y_val[0], MSE[0]
 
     #Suggests coordinates where samples should next be drawn.
     def suggest_next(self,number_of_suggestions, minimum_climbs=40):
