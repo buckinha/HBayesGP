@@ -1,6 +1,7 @@
 import SWMv1_3 as SWM1
 import SWMv2_1 as SWM2
-import HBayesGP, random
+import HBayesGP
+import random
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
@@ -51,6 +52,7 @@ class SWMAnalyst:
         self.y_var = []
         self.supprate = []
         self.classification = []
+        self.real_sample = [] #True for an actual sample, False for one that's been predicted
 
         ## BOUNDARIES ##
         self.bounds = []
@@ -59,7 +61,7 @@ class SWMAnalyst:
         self.set_bounds()
 
         ## DATA GENERATION PARAMETERS ##
-        self.grid_sampling_density = 0.25
+        self.grid_sampling_density = 1.0
 
         ## GAUSSIAN PROCESS OBJECT ##
         #this will be instantiated the first time that data is recieved
@@ -70,9 +72,22 @@ class SWMAnalyst:
 
     ### PUBLIC FUNCTIONS
 
-    #Gets a single SWM v1.3 or SWMv2.1 "sample"
+    #set the model to swm1 or swm2
+    def set_SWM_model(self, model_integer):
+        """Set to SWMv1.3 or SWMv2.1 by passing a 1 or a 2, respectively"""
+        if model_integer == 2:
+            self.USING_SWM2_1 = True
+            self.grid_sampling_density = 20.0
+            self.set_bounds()
+        else:
+            self.USING_SWM2_1 = False
+            self.grid_sampling_density = 2.0
+            self.set_bounds()
+
+
+    #Gets a single SWMv1.3 or SWMv2.1 "sample"
     def SWM_sample(self, policy):
-        """Gets a single SWM v1.3 "sample"
+        """Gets a single SWMv1.3 or SWMv2.1 "sample"
 
         We'll draw monte carlo simulations at the given policy, which
         is the gaussian process "coordinate", and take the average value of all,
@@ -159,6 +174,7 @@ class SWMAnalyst:
         if not self.GP:
             #the GP hasn't been instantiated, most likely because there's no data yet.
             #so set it up for a pass through the grid sampler
+            print("No data present, switching from auto sampler to grid sampler.")
             if policy_type == "auto": policy_type = "grid"
 
 
@@ -168,9 +184,11 @@ class SWMAnalyst:
             #no policies were given, so generate them
             if policy_type == "auto":
                 #ask the gp object for it's next guesses
-                #TODO
-                pass
+                # HBayesGP.suggest_next(self,number_of_suggestions, minimum_climbs=40):
+                print("Querying GP for new sample positions.")
+                pols = self.GP.suggest_next(sample_count, minimum_climbs=10, CLIMB_FROM_CURRENT_DATA=False)
             elif policy_type == "grid":
+                print("Getting grid coordinates.")
                 pols = self._grid_sampling_coordinates()
             else:
                 #default to "random"
@@ -192,18 +210,53 @@ class SWMAnalyst:
             new_y_var = []
             new_X = []
             new_supprate = []
-            for p in pols:
-                #check filters
-                if (self.USING_CLASSIFIER) and (self.classify_policy(p) != GOOD_POL):
-                    pass
-                if self.FILTER_OOB:
-                    pass
+            new_class = []
+            new_real = []
 
-                _y, _var, _X, _supp = self.SWM_sample(p)
-                new_y.append(_y)
-                new_y_var.append(_var)
-                new_X.append(_X)
-                new_supprate.append(_supp)
+            print("Policies generated. Simulating...")
+            for p in pols:
+
+                #check filters
+                pol_type = self.classify_policy(p)
+
+                if pol_type == OOB_POL:
+                    #it's an out-of-bounds policy (and OOB is being enforced)
+                    new_y.append(self.OOB_default_mean + 1 - 1)
+                    new_y_var.append(self.OOB_default_var + 1 - 1)
+                    new_X.append(p[:])
+                    new_supprate.append(0.5) #TODO What should it be???
+                    new_class.append(GOOD_POL)
+                    new_real.append(False)
+
+                elif pol_type == LB_POL:
+                    #it's been classified as an LB policy, so use the current estimate of the 
+                    #LB mean and variance, etc...
+                    new_y.append(self.LB_default_mean + 1 - 1)
+                    new_y_var.append(self.edge_default_var + 1 - 1)
+                    new_X.append(p[:])
+                    new_supprate.append(0.0)
+                    new_class.append(LB_POL)
+                    new_real.append(False)
+
+                elif pol_type == SA_POL:
+                    #it's been classified as an SA policy, so use the current estimate of the
+                    # SA mean and variance
+                    new_y.append(self.SA_default_mean + 1 - 1)
+                    new_y_var.append(self.edge_default_var + 1 - 1)
+                    new_X.append(p[:])
+                    new_supprate.append(1.0)
+                    new_class.append(SA_POL)
+                    new_real.append(False)
+
+                else:
+                    #it's a good policy (GOOD_POL), so sample it
+                    _y, _var, _X, _supp = self.SWM_sample(p)
+                    new_y.append(_y)
+                    new_y_var.append(_var)
+                    new_X.append(_X)
+                    new_supprate.append(_supp)
+                    new_class.append(self._supp_to_class(_supp))
+                    new_real.append(True)
 
 
             #add new data to the current data set
@@ -211,7 +264,10 @@ class SWMAnalyst:
             self.y_var = self.y_var + new_y_var
             self.X = self.X + new_X
             self.supprate = self.supprate + new_supprate
+            self.classification = self.classification + new_class
+            self.real_sample = self.real_sample + new_real
 
+            print("Simulations complete. Fitting GP...")
             #if there's already a GP object, then add data to it
             if self.GP:
                 self.GP.add_data(new_X, new_y, new_y_var, NO_FIT=True)
@@ -221,37 +277,24 @@ class SWMAnalyst:
 
 
             #re-fit the GP and classifier models
-            self.fit_GP() # <-- if there's no GP, then this function will add ALL the data to a new one.
-            self.fit_classifier()
+            self.fit_GP() # <-- if there's no GP, then this function will also add ALL the data to a new one.
+
+            print("Fitting Classfier...")
+            if self.USING_CLASSIFIER: self.fit_classifier()
+
+            print("Additional Data Acquisition is Complete.")
+            print("")
 
 
-    #TODO
-    def filter_edge_policies(self, new_policies):
-        """Returns a list of True/False values reflecting whether each policy should be sampled.
 
-        Summary
-        Does predictions based on the underlying classification model and determines whether 
-        each of the policies given is likely to be an edge case or not. A list of True/False 
-        values are passed back, where True indicates that the associated policy SHOULD be sampled
-        i.e. not an edge policy, and False indicates that the assoicated policy is likely to 
-        be an edge policy and should NOT be sampled.
-
-        PARAMETERS
-        new_policies: a list of policies to be filtered
-
-        RETURNS
-        policy mask: a list of length equal to new_policies with True values at indicies where
-        the policy in new_policies ought to be sampled (not an edge policy) and False where
-        the policy in new_policies ought not to be sampled (a likely edge policy)
-
-        """
-
-        #TODO
-        return []
-
-    #TODO
+    #Uses existing data to fit the edge-policy classifier
     def fit_classifier(self):
-        """Uses existing data to fit the edge-detection classifier.
+        """Uses existing data to fit the edge-policy classifier.
+
+        This function will skip any samples flagged as False in the self.real_sample list.
+        Those samples are ones that have already been estimated by the classifier, and need
+        to be excluded from the fit. Otherwise it'll be ever-more biased towards its earlier
+        predictions, since those predictions would show up as (perfectly accurate) samples.
 
         PARAMETERS
         None
@@ -260,37 +303,56 @@ class SWMAnalyst:
         None 
         """
 
-        pass
+        #make sure the classifier has been initilaized
+        if not self.classifier: self._init_classifier()
 
-    #TODO Check's a policy against the current classifier system
+        #in other words, take self.X[i] if self.real_sample == True, and make a list out of it
+        # and make that into a numpy array.
+        filtered_X = np.array([ i for i,j in zip(self.X, self.real_sample) if j])
+        filtered_class = np.array([ i for i,j in zip(self.classification, self.real_sample) if j])
+
+        #fit the classifier
+        self.classifier.fit( filtered_X, filtered_class )
+
+    #Check's a policy against the current classifier system
     def classify_policy(self, policy):
-        #TODO
-        #returns GOOD_POL, SA_POL, LB_POL, OOB_POL
+        """ Runs the classifier and bounds checks, and returns an integer reflecting the policy type
+
+        PARAMETERS
+        policy: a policy of the same length as those used everywhere else
+
+        RETURNS
+        policy type: an integer set to equal one of the following constants:
+            GOOD_POL, SA_POL, LB_POL, OOB_POL
+        """
         
         #first check OOB
         if self.check_for_OOB_policy(policy) == OOB_POL:
             return OOB_POL
         else:
-            #policy is in-bounds; run the classfier
-            #TODO!!!
-            return GOOD_POL
-
-    #TODO Check's if a policy is in or out of bounds
-    def check_for_OOB_policy(self, policy):
-        #is there data yet?
-        if len(self.X) < 1:
-            print("ERROR: there isn't any data yet")
-            return OOB_POL
-
-        for i in range(len(self.X[0])):
-            if (policy[i] >= self.bounds[i][0]) and (policy[i] <= self.bounds[i][1]):
-                pass
+            #policy is in-bounds; run the classfier if we're using one.
+            if self.USING_CLASSIFIER:
+                pol_type = self.classfier.predict([policy])
+                #it returns a list of predictions from a list of policies
+                # so just return the first element of that list, which should be the prediction
+                return pol_type[0]  
             else:
+                #it was in bounds, and we're not bothering with a classifier,
+                #so return good_pol
+                return GOOD_POL
+
+    #Check's if a policy is in or out of bounds
+    def check_for_OOB_policy(self, policy):
+        pol_len = 2
+        if self.USING_SWM2_1: pol_len = 6
+
+        for i in range(pol_len):
+            #      pol[i] < lower bound for i  or     pol[i] > upper bound for i
+            if (policy[i] < self.bounds[i][0]) or (policy[i] > self.bounds[i][1]):
                 return OOB_POL
 
         #we've completed the loop without returning OOB_POL, so this must be in bounds
         return GOOD_POL
-
 
     #Creates (if necessary) and fits a gaussian process to the data
     def fit_GP(self):
@@ -330,7 +392,7 @@ class SWMAnalyst:
 
     #instantiates the classifier object(s)
     def _init_classifier(self):
-        if self.classifier_type = "random forest":
+        if self.classifier_type == "random forest":
             self.classfier = RandomForestClassifier(max_depth=self.RFC_depth, n_estimators=self.RFC_estimators)
         else:
             print("ERROR: Unknown classifer value: " + str(self.classifier_type))
@@ -358,14 +420,24 @@ class SWMAnalyst:
             slice_counts[i] = abs(self.bounds[i][0] - self.bounds[i][1]) / self.grid_sampling_density
             slice_counts[i] = np.ceil(slice_counts[i])
 
+        total_policy_count = 1
+        for i in range(pol_len):
+            total_policy_count *= slice_counts[i]
+
+        if total_policy_count > 1000:
+            print("WARNING: as currently parameterized, the grid sampler will visit {0} points".format(total_policy_count))
+            x = raw_input("Do you want to continue? (y/n)")
+            if not x == "y":
+                return []
+
+
         #get slices
         slices = []
         for i in range(pol_len):
             slices.append(np.linspace(self.bounds[i][0], self.bounds[i][1], slice_counts[i]))
 
 
-        #get coordinates as x and y vectors
-        coordinate_list = []
+        #define recursive function
         def _recur_get_next_line(slices, current_depth, current_coord, return_list):
             """ instantiate with current_depth = 0, current_coord is a zero vector, and
             return_list is an empty list"""
@@ -393,7 +465,14 @@ class SWMAnalyst:
 
                 return return_list
 
-        _recur_get_next_line(slices, 0, [0.0] * pol_len, coordinate_list)
+        #get coordinates as x and y vectors
+        coordinate_list = []
+        coordinate_list = _recur_get_next_line(slices, 0, [0.0] * pol_len, coordinate_list)
 
 
         return coordinate_list
+
+    def _supp_to_class(self, supp_rate):
+        if supp_rate >= 0.995: return SA_POL
+        elif supp_rate <= 0.005: return LB_POL
+        else: return GOOD_POL

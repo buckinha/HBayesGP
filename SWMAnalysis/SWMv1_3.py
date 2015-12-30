@@ -1,34 +1,12 @@
-"""SWM, A Simple Wildfire-inspired MDP model. Version 2.1"""
+"""SWM, A Simple Wildfire-inspired MDP model. Version 1.3"""
 
+import random, math, numpy, MDP
 
-"""
-SWMv2.1
-
-New Features:
-
--An additional weather variable ("moisture") which works against the spread of large fires and which has
- a separate threshold.
-
--The policy function now includes the current state variables "timber" and "vulnerability" as parameters 
- in addition to the original. The full policy is now [CONS, HEAT, MOISTURE, TIMBER, VULNERABILITY, HABITAT]
-
--habitat value: a seperate reward structure with different criteria than the main "reward"
-
--Using feature transformations so that the logistic sees only features which have mean ~= 0 and STD ~= 0.5
-
--OPTIONALLY using feature vector length adjustment so that the crossproduct inside of the logistic policy 
- function is in the same range, regardless of how many values are in the vector
-"""
-
-import random, math, MDP
-import numpy as np
-from feature_transformation import feature_transformation as feature_trans
-
-def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}, SILENT=False, PROBABILISTIC_CHOICES=True):
+def simulate(timesteps, policy=[0,0], random_seed=0, model_parameters={}, SILENT=False, PROBABILISTIC_CHOICES=True):
     
     random.seed(random_seed)
     
-    #range of the randomly drawn, uniformally distributed "event" that corresponds to "heat" and "moisture"
+    #range of the randomly drawn, uniformally distributed "event" that corresponds to fire severity
     event_max = 1.0
     event_min = 0.0
 
@@ -36,11 +14,9 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
     vuln_max = 1.0
     vuln_min = 0.02
 
-    timber_max = 1.0
+    timber_max = 10.0
     timber_min = 0.0
     
-    #timber multiplier: this is to scale the rewards while leaving the raw timber values between 0 and 1
-    timber_multiplier = 10.0
 
 
 
@@ -75,12 +51,20 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
     if "Vulnerability Change After Mild" in model_parameters.keys(): vuln_change_after_mild = model_parameters["Vulnerability Change After Mild"]
     if "Vulnerability Change After Severe" in model_parameters.keys(): vuln_change_after_severe = model_parameters["Vulnerability Change After Severe"]
 
-    timber_change_after_suppression = 0.01
-    timber_change_after_mild = 0.01
-    timber_change_after_severe = -0.5
+    timber_change_after_suppression = 0.1
+    timber_change_after_mild = 0.1
+    timber_change_after_severe = -5.0
     if "Timber Value Change After Suppression" in model_parameters.keys(): timber_change_after_suppression = model_parameters["Timber Value Change After Suppression"]
     if "Timber Value Change After Mild" in model_parameters.keys(): timber_change_after_mild = model_parameters["Timber Value Change After Mild"]
     if "Timber Value Change After Severe" in model_parameters.keys(): timber_change_after_severe = model_parameters["Timber Value Change After Severe"]
+
+
+    if "Probabilistic Choices" in model_parameters.keys():
+        if model_parameters["Probabilistic Choices"] == "True":
+            PROBABILISTIC_CHOICES = True
+        else:
+            PROBABILISTIC_CHOICES = False
+
 
     #habitat transition variables
     habitat_mild_maximum = 15
@@ -92,21 +76,14 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
     habitat_gain = 0.1
 
 
-    if "Probabilistic Choices" in model_parameters.keys():
-        if model_parameters["Probabilistic Choices"] == "True":
-            PROBABILISTIC_CHOICES = True
-        else:
-            PROBABILISTIC_CHOICES = False
-
-
-
     #starting_condition = 0.8
     starting_Vulnerability = random.uniform(0.2,0.8)
     if "Starting Vulnerability" in model_parameters.keys(): starting_condition = model_parameters["Starting Condition"]
-    starting_timber = random.uniform(0.2,0.8)
+    starting_timber = random.uniform(2,8)
     if "Starting Timber Value" in model_parameters.keys(): starting_timber = model_parameters["Starting Timber Value"]
-    starting_habitat = random.uniform(0.2,0.8)
+    starting_habitat = random.uniform(2,8)
     if "Starting Habitat Value" in model_parameters.keys(): starting_habitat = model_parameters["Starting Habitat Value"]
+
 
     #setting 'enums'
     MILD=0
@@ -123,32 +100,30 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
     time_since_severe = 0
     time_since_mild = 0
 
-    #instantiating the feature list now, to save cycles
-    curent_features = [0.0, 0.0, 0.0, 0.0, 0.0]
 
     for i in range(timesteps):
 
-        #generate the two weather variables for this event
-        heat = random.uniform(event_min, event_max)
-        moisture = random.uniform(event_min, event_max)
+        #event value is the single "feature" of events in this MDP
+        ev = random.uniform(event_min, event_max)
 
         #severity is meant to be a hidden, "black box" variable inside the MDP
         # and not available to the logistic function as a parameter
         severity = MILD
-        if heat >= (1 - current_vulnerability): 
-            #if moisture < ((event_max - event_min) * 0.3):
-            if True:
-                severity = SEVERE
+        if ev >= (1 - current_vulnerability): severity = SEVERE
 
 
         #logistic function for the policy choice
-        curent_features = [heat, moisture, current_timber, current_vulnerability, current_habitat]
-        policy_value = policy_function(curent_features, pol)
+        policy_crossproduct = pol[0] + pol[1]*ev
+        #modified logistic policy function
+        #                     CONSTANT       COEFFICIENT       SHIFT
+        #policy_crossproduct = pol[0] + ( pol[1] * (ev + pol[2]) )
+        if policy_crossproduct > 100: policy_crossproduct = 100
+        if policy_crossproduct < -100: policy_crossproduct = -100
 
-        #rolling a value to compare to the policy 'probability' in policy_value
+        policy_value = 1.0 / (1.0 + math.exp(-1*(policy_crossproduct)))
+
         choice_roll = random.uniform(0,1)
-
-        #assume let-burn for the moment...
+        #assume let-burn
         choice = False
         choice_prob = 1.0 - policy_value
         #check for suppress, and update values if necessary
@@ -162,7 +137,7 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
                 choice_prob = policy_value
 
 
-        ### CALCULATE PRIMARY REWARD ###
+        ### CALCULATE REWARD ###
         supp_cost = 0
         burn_penalty = 0
         if choice:
@@ -178,25 +153,14 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
                 #this is modeling the timber values lost in a large fire.
                 burn_penalty = burn_cost
 
-        current_reward = (timber_multiplier * current_timber) - supp_cost - burn_penalty
-        #current_reward = 10 + (timber_multiplier * current_timber) - supp_cost - burn_penalty
+        
 
 
+        current_reward = 10 + current_timber - supp_cost - burn_penalty
+                
 
-        #Record state information
-        #states[i] = [current_vulnerability, current_timber, heat, moisture, choice, choice_prob, policy_value, current_reward, current_habitat, i]
-        states[i] = {
-                      "Vulnerability": current_vulnerability,
-                      "Timber": current_timber,
-                      "Heat": heat,
-                      "Moisture": moisture,
-                      "Choice": choice,
-                      "Choice Probability": choice_prob,
-                      "Policy Value": policy_value,
-                      "Reward": current_reward,
-                      "Habitat": 10 * current_habitat,
-                      "Time Step": i
-                    }
+        states[i] = [current_vulnerability, current_timber, ev, choice, choice_prob, policy_value, current_reward, current_habitat, i]
+
 
 
         ### TRANSITION ###
@@ -226,6 +190,7 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
             time_since_mild += 1
             time_since_severe += 1
 
+
         #check for habitat changes. 
         #Note to self: suppression effects are already taken into account above
         if ( (time_since_mild <= habitat_mild_maximum) and 
@@ -249,7 +214,7 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
         if current_vulnerability < vuln_min: current_vulnerability = vuln_min
         if current_timber > timber_max: current_timber = timber_max
         if current_timber < timber_min: current_timber = timber_min
-        if current_habitat > 1: current_habitat = 1
+        if current_habitat > 10: current_habitat = 10
         if current_habitat < 0: current_habitat = 0
 
 
@@ -262,33 +227,19 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
     suppressions = 0.0
     joint_prob = 1.0
     prob_sum = 0.0
-
-    #state information is stored as:
-    # states[i] = {
-    #                   "Vulnerability": current_vulnerability,
-    #                   "Timber": current_timber,
-    #                   "Heat": heat,
-    #                   "Moisture": moisture,
-    #                   "Choice": choice,
-    #                   "Choice Probability": choice_prob,
-    #                   "Policy Value": policy_value,
-    #                   "Reward": current_reward,
-    #                   "Habitat": current_habitat,
-    #                   "Time Step", i
-    #                 }
     for i in range(timesteps):
-        if states[i]["Choice"]: suppressions += 1
-        joint_prob *= states[i]["Choice Probability"]
-        prob_sum += states[i]["Choice Probability"]
-        vals.append(states[i]["Reward"])
-        hab.append(states[i]["Habitat"])
+        if states[i][3]: suppressions += 1
+        joint_prob *= states[i][4]
+        prob_sum += states[i][4]
+        vals.append(states[i][6])
+        hab.append(states[i][7])
     ave_prob = prob_sum / timesteps
 
     summary = {
-                "Average State Value": round(np.mean(vals),3),
-                "Total Pathway Value": round(np.sum(vals),3),
-                "STD State Value": round(np.std(vals),1),
-                "Average Habitat Value": round(np.mean(hab),1),
+                "Average State Value": round(numpy.mean(vals),2),
+                "Total Pathway Value": round(numpy.sum(vals),0),
+                "STD State Value": round(numpy.std(vals),2),
+                "Average Habitat Value": round(numpy.mean(hab),2),
                 "Suppressions": suppressions,
                 "Suppression Rate": round((float(suppressions)/timesteps),2),
                 "Joint Probability": joint_prob,
@@ -296,7 +247,7 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
                 "ID Number": random_seed,
                 "Timesteps": timesteps,
                 "Generation Policy": policy,
-                "Version": "2.1",
+                "Version": "1.2",
                 "Vulnerability Min": vuln_min,
                 "Vulnerability Max": vuln_max,
                 "Vulnerability Change After Suppression": vuln_change_after_suppression,
@@ -315,8 +266,8 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
     if not SILENT:
         print("")
         print("Simulation Complete - Pathway " + str(random_seed))
-        print("Average State Value: " + str(round(np.mean(vals),1)) + "   STD: " + str(round(np.std(vals),1)))
-        print("Average Habitat Value: " + str(round(np.mean(hab),1)) )
+        print("Average State Value: " + str(round(numpy.mean(vals),1)) + "   STD: " + str(round(numpy.std(vals),1)))
+        print("Average Habitat Value: " + str(round(numpy.mean(hab),1)) )
         print("Suppressions: " + str(suppressions))
         print("Suppression Rate: " + str(round((float(suppressions)/timesteps),2)))
         print("Joint Probability:" + str(joint_prob))
@@ -328,106 +279,85 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
 
     return summary
 
-def policy_function(feature_vector, policy, vector_length_scaling=False):
-    """Calculates and returns the logistic policy function's value of a given feature vector"""
 
-    #get the transformed values of the features
-    transformed_features = feature_trans(feature_vector)
+def simulate_all_policies(timesteps=10000, start_seed=0):
 
-    #add the constant term
-    transformed_features = [1.0] + transformed_features
 
-    #do the raw crossproduct of the features times the values
-    cross_product = np.sum(  [transformed_features[i] * policy[i] for i in range(len(policy))]  )
+    result_CT =    simulate(timesteps, policy=[  0,  0, 0.0], random_seed=start_seed, SILENT=True)
+    result_LB =    simulate(timesteps, policy=[-20,  0, 0.0], random_seed=start_seed, SILENT=True)
+    result_SA =    simulate(timesteps, policy=[ 20,  0, 0.0], random_seed=start_seed, SILENT=True)
+    result_KNOWN = simulate(timesteps, policy=[  0, 20,-0.8], random_seed=start_seed, SILENT=True)
 
-    #do the vector length scaling step, if desired
-    if vector_length_scaling:
-        cross_product = cross_product * (1.0 / np.sqrt(len(policy)))
+    result_CT["Name"] = "Coin-Toss:    "
+    result_SA["Name"] = "Suppress-All: "
+    result_LB["Name"] = "Let-burn:     "
+    result_KNOWN["Name"] = "Known:        "
 
-    #get the logistic function value
-    func_val = 1.0 / (1.0 + np.exp(-1.0 * cross_product))
-
-    return func_val
-
+    results = [result_CT, result_SA, result_LB, result_KNOWN]
+    print("Policy            Ave    STD    SupRate  AveProb  JointProb")
+    for r in results:
+        print(r["Name"] + "   "),
+        print(str(r["Average State Value"]) + "   "),
+        print(str(r["STD State Value"]) + "   "),
+        print(str(r["Suppression Rate"]) + "      "),
+        print(str(r["Average Probability"]) + "    "),
+        print(str(r["Joint Probability"]))
 
 def sanitize_policy(policy):
     pol = []
     if isinstance(policy, list):
-        if len(policy) < 6:
-            #it's under length for some reason, so append zeros
-            z = [0] * (6-len(pol))
-            pol = pol + z
-        else:
-            #the length is good, so just assign it. Extra values will just be ignored.
-            pol = policy[:]
+        #it's probably length-2, so just assign it
+        pol = policy[:]
     else:
         #it's not a list, so find out what string it is
-        if policy == "LB":    pol = [-20,0,0,0,0,0]
-        elif policy == "SA":  pol = [ 20,0,0,0,0,0]
-        elif policy == "CT":  pol = [  0,0,0,0,0,0]
-        else: pol = [0,0,0,0,0,0] #using CT as a catch-all for when the string is "MIXED_CT" or whatnot
+        if policy == "LB":    pol = [-20,0]
+        elif policy == "SA":  pol = [ 20,0]
+        elif policy == "CT":  pol = [  0,0]
+        else: pol = [0,0] #using CT as a catch-all for when the string is "MIXED_CT" or whatnot
 
     return pol
 
-def convert_to_MDP_pathway(SWMv2_pathway,VALUE_ON_HABITAT=False, percentage_habitat=0):
-    """ Converts a SWMv2 pathway into a generic MDP_Pathway object and returns it"""
+def convert_to_MDP_pathway(SWMv1_3_pathway,VALUE_ON_HABITAT=False, percentage_habitat=0):
+    """ Converts a SWMv1_3 pathway into a generic MDP_Pathway object and returns it"""
     
-    #create a new MDP pathway object, with policy length = 5
-    new_MDP_pw = MDP.MDP_Pathway(6)
+    #create a new MDP pathway object, with policy length = 2
+    new_MDP_pw = MDP.MDP_Pathway(2)
     
-    new_MDP_pw.ID_number = SWMv2_pathway["ID Number"]
-    new_MDP_pw.net_value = SWMv2_pathway["Total Pathway Value"]
-    new_MDP_pw.actions_1_taken = SWMv2_pathway["Suppressions"]
-    new_MDP_pw.actions_0_taken = SWMv2_pathway["Timesteps"] - SWMv2_pathway["Suppressions"]
-    new_MDP_pw.generation_joint_prob = SWMv2_pathway["Joint Probability"]
-    new_MDP_pw.set_generation_policy_parameters(SWMv2_pathway["Generation Policy"][:])
+    new_MDP_pw.ID_number = SWMv1_3_pathway["ID Number"]
+    new_MDP_pw.net_value = SWMv1_3_pathway["Total Pathway Value"]
+    new_MDP_pw.actions_1_taken = SWMv1_3_pathway["Suppressions"]
+    new_MDP_pw.actions_0_taken = SWMv1_3_pathway["Timesteps"] - SWMv1_3_pathway["Suppressions"]
+    new_MDP_pw.generation_joint_prob = SWMv1_3_pathway["Joint Probability"]
+    new_MDP_pw.set_generation_policy_parameters(SWMv1_3_pathway["Generation Policy"][:])
     
-    for i in range(len(SWMv2_pathway["States"])):
+    for i in range(len(SWMv1_3_pathway["States"])):
         event = MDP.MDP_Event(i)
-
-        #state information is stored as:
-        # states[i] = {
-        #                   "Vulnerability": current_vulnerability,
-        #                   "Timber": current_timber,
-        #                   "Heat": heat,
-        #                   "Moisture": moisture,
-        #                   "Choice": choice,
-        #                   "Choice Probability": choice_prob,
-        #                   "Policy Value": policy_value,
-        #                   "Reward": current_reward,
-        #                   "Habitat": current_habitat,
-        #                   "Time Step", i
-        #                 }
         
-        heat = SWMv2_pathway["States"][i]["Heat"]
-        moisture = SWMv2_pathway["States"][i]["Moisture"]
-        timber = SWMv2_pathway["States"][i]["Timber"]
-        vulnerabilty = SWMv2_pathway["States"][i]["Vulnerability"]
-        habitat = SWMv2_pathway["States"][i]["Habitat"]
-        event.state = [1, heat, moisture, timber, vulnerabilty, habitat ]
-
-        event.state_length = 6
-        event.action = SWMv2_pathway["States"][i]["Choice"]
-        event.decision_prob = SWMv2_pathway["States"][i]["Choice Probability"]
-        event.action_prob = SWMv2_pathway["States"][i]["Policy Value"]
-
-        #setting value.  Value_on_habitat takes precedence, followed by percentage_habitat.
-        #if neither are set, then the default is to use the regular (timber val - supp cost) reward.
-        if VALUE_ON_HABITAT:
-            event.rewards = SWMv2_pathway["States"][i]["Habitat"]
-        elif percentage_habitat > 0:
-            part_hab = SWMv2_pathway["States"][i]["Habitat"] * percentage_habitat
-            part_val = SWMv2_pathway["States"][i]["Habitat"] * (1 - percentage_habitat)
-            event.rewards = part_hab + part_val
+        #in SWIMM, the states are each in the following format:
+        #states[i] = [current_vulnerability, current_timber, ev, choice, choice_prob, policy_value, current_reward, current_habitat, i]
+        event.state_length = 2
+        event.state = [1, SWMv1_3_pathway["States"][i][2]]
+        event.action = SWMv1_3_pathway["States"][i][3]
+        event.decision_prob = SWMv1_3_pathway["States"][i][4]
+        event.action_prob = SWMv1_3_pathway["States"][i][5]
+        if (VALUE_ON_HABITAT) or (percentage_habitat >= 1):
+            #just report habitat values
+            event.rewards = [SWMv1_3_pathway["States"][i][7]]
         else:
-            event.rewards = SWMv2_pathway["States"][i]["Reward"]
+            if percentage_habitat > 0 :
+                #non-zero percentage, so report the appropriate mix of habitat and budget values
+                parts_hab = [SWMv1_3_pathway["States"][i][7]] * percentage_habitat
+                parts_budg = [SWMv1_3_pathway["States"][i][6]] * (1-percentage_habitat)
+                event.rewards = parts_hab + parts_budg
+            else:
+                event.rewards = [SWMv1_3_pathway["States"][i][6]]
         
         new_MDP_pw.events.append(event)
 
     #everything needed for the MDP object has been filled in, so now
     # remove the states (at least) and add the rest of the SWM dictionary's entries as metadata
-    SWMv2_pathway.pop("States",None)
-    new_MDP_pw.metadata=SWMv2_pathway
+    SWMv1_3_pathway.pop("States",None)
+    new_MDP_pw.metadata=SWMv1_3_pathway
     
     return new_MDP_pw
     

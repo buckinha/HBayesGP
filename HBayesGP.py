@@ -25,7 +25,7 @@ class HBayesGP:
         self.gp_theta0 = 0.0
 
         #set a first length scale, which calculates self.gp_theta0
-        self.set_characteristic_length_scale(CLS=1.0)
+        self.set_characteristic_length_scale(CLS=0.5)
 
         #and instantiate the gp
         #if the MLE upper AND lower bounds are defined, then set them too
@@ -203,7 +203,7 @@ class HBayesGP:
         return y_val[0], MSE[0]
 
     #Suggests coordinates where samples should next be drawn.
-    def suggest_next(self,number_of_suggestions, minimum_climbs=40):
+    def suggest_next(self,number_of_suggestions, minimum_climbs=40, CLIMB_FROM_CURRENT_DATA=True):
         """ Suggests coordinates where samples should next be drawn.
 
         Using the chosen (or default) sampler method, this heuristic will
@@ -280,13 +280,14 @@ class HBayesGP:
 
 
         #do climbs from previously sampled points
-        for x_coord in self.X:
-            #do the climb
-            #ending_point = minimize(self._max_conf, x0=x_coord, method='L-BFGS-B', bounds=self.bounds).x
-            ending_point = self._climb_uconf(x_coord)
+        if CLIMB_FROM_CURRENT_DATA:
+            for x_coord in self.X:
+                #do the climb
+                #ending_point = minimize(self._max_conf, x0=x_coord, method='L-BFGS-B', bounds=self.bounds).x
+                ending_point = self._climb_uconf(x_coord)
 
-            #add the result.x to the list
-            suggestions.append(ending_point)
+                #add the result.x to the list
+                suggestions.append(ending_point)
 
 
 
@@ -793,7 +794,13 @@ class HBayesGP:
         #do the calculations. According to the documentation with sklearn.gaussian_process,
         # the value of the nugget for sample i should be (var_i / y_i)^2
         for i in range(len(self.y)):
+            #TODO: how to actually manage zero safety??
+            if self.y[i] == 0:
+                self.y[i] += 0.000001
+
             self.nugget[i] = (self.y_var[i] * self.y_var[i]) / (self.y[i] * self.y[i])
+            
+                
 
         #set the nugget
         self.gp.nugget = self.nugget[:]
