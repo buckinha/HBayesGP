@@ -65,9 +65,11 @@ class HBayesGP:
         # the lower and upper bounds of the same-indexed element of any x vector
         if not bounds:
             self.bounds = [  [float("-inf"), float("inf")] for i in range(len(self.X[0])) ]
+            self.lbfgs_bounds = [  [float("-inf"), float("inf")] for i in range(len(self.X[0])) ]
         else:
             self.bounds = bounds
-
+            self.lbfgs_buffer = 5.0
+            self.lbfgs_bounds = [ [b[0]-self.lbfgs_buffer, b[1]+self.lbfgs_buffer] for b in self.bounds]
 
         #start the global bests list
         self.global_bests_count = min(10, len(self.y))
@@ -84,6 +86,11 @@ class HBayesGP:
 
 
     ### PUBLIC FUNCTIONS ###
+
+    def set_bounds(self, bounds, lbfgs_buffer=5.0):
+        self.bounds = bounds[:]
+        self.lbfgs_buffer = lbfgs_buffer
+        self.lbfgs_bounds = [ [b[0]-self.lbfgs_buffer, b[1]+self.lbfgs_buffer] for b in self.bounds]
 
     #add data to the model and re-fit the GP
     def add_data(self, X, y, y_var=None, NO_FIT=False):
@@ -416,7 +423,7 @@ class HBayesGP:
                 #didn't raise an exception if we're here, so the list is of an acceptable length
                 #so fill the full_coord array from dimN_values
                 full_coord = dimN_values[:len(self.X[0])]
-                
+
             else:
                 #dimN_values was set, but is not a list, so assume it's a numeric value
                 full_coord = [dimN_values] * len(self.X[0])
@@ -1015,7 +1022,7 @@ class HBayesGP:
 
         return _y_val[0] + 1.96 * _MSE[0]
 
-
+    #runs l-bfgs-b on the upper confidence surface, starting at 'x'
     def _climb_uconf(self,x):
         """Does and L-BFGS-B hill-climb up the upper confidence-limit surface
 
@@ -1031,7 +1038,7 @@ class HBayesGP:
         def neg_uconf(x):
             return self._max_conf(x) * -1.0
 
-        result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.bounds)
+        result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.lbfgs_bounds)
 
 
         return result.x
