@@ -416,9 +416,10 @@ class HBayesGP:
                 #didn't raise an exception if we're here, so the list is of an acceptable length
                 #so fill the full_coord array from dimN_values
                 full_coord = dimN_values[:len(self.X[0])]
-
-            #dimN_values was set, but is not a list, so assume it's a numeric value
-            full_coord = [dimN_values] * len(self.X[0])
+                
+            else:
+                #dimN_values was set, but is not a list, so assume it's a numeric value
+                full_coord = [dimN_values] * len(self.X[0])
 
         else:
             #none was passed, so make a vector of zeros

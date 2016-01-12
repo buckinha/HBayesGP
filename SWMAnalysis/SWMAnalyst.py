@@ -25,6 +25,10 @@ class SWMAnalyst:
         #the default values for out-of-bounds "samples"
         self.OOB_default_mean = 0.0
         self.OOB_default_var = 0.0001
+        #using squared OOB distance penalty?
+        self.USING_OOB_PENALTY = True
+        #when using the squared OOB distance penalty, what is the scaling parameter
+        self.OOB_alpha = 1.0
 
         ## SA/LB FILTER PARAMETERS ##
         self.USING_CLASSIFIER = False
@@ -70,7 +74,7 @@ class SWMAnalyst:
 
 
 
-    ### PUBLIC FUNCTIONS
+    ### PUBLIC FUNCTIONS ###
 
     #set the model to swm1 or swm2
     def set_SWM_model(self, model_integer):
@@ -83,7 +87,6 @@ class SWMAnalyst:
             self.USING_SWM2_1 = False
             self.grid_sampling_density = 2.0
             self.set_bounds()
-
 
     #Gets a single SWMv1.3 or SWMv2.1 "sample"
     def SWM_sample(self, policy):
@@ -221,12 +224,28 @@ class SWMAnalyst:
 
                 if pol_type == OOB_POL:
                     #it's an out-of-bounds policy (and OOB is being enforced)
-                    new_y.append(self.OOB_default_mean + 1 - 1)
-                    new_y_var.append(self.OOB_default_var + 1 - 1)
-                    new_X.append(p[:])
-                    new_supprate.append(0.5) #TODO What should it be???
-                    new_class.append(GOOD_POL)
-                    new_real.append(False)
+                    if not self.USING_OOB_PENALTY:
+                        #just using the default OOB values
+                        new_y.append(self.OOB_default_mean + 1 - 1)
+                        new_y_var.append(self.OOB_default_var + 1 - 1)
+                        new_X.append(p[:])
+                        new_supprate.append(0.5) #TODO What should it be???
+                        new_class.append(GOOD_POL)
+                        new_real.append(False)
+
+                    else:
+                        #using the squared distance penalty
+                        print("...a policy is OOB")
+                        _y, _var, _X, _supp = self.SWM_sample(p)
+                        penalty = self.penalize_OOB_sim_value(p)
+                        print("sim val: {0}   penalty: {1}   policy: {2}".format(_y, penalty, p))
+                        new_y.append(_y - penalty)
+                        new_y_var.append(self.OOB_default_var + 1 - 1)
+                        new_X.append(_X)
+                        new_supprate.append(_supp)
+                        new_class.append(self._supp_to_class(_supp))
+                        new_real.append(True)
+
 
                 elif pol_type == LB_POL:
                     #it's been classified as an LB policy, so use the current estimate of the 
@@ -285,8 +304,6 @@ class SWMAnalyst:
             print("Additional Data Acquisition is Complete.")
             print("")
 
-
-
     #Uses existing data to fit the edge-policy classifier
     def fit_classifier(self):
         """Uses existing data to fit the edge-policy classifier.
@@ -318,6 +335,9 @@ class SWMAnalyst:
     def classify_policy(self, policy):
         """ Runs the classifier and bounds checks, and returns an integer reflecting the policy type
 
+        The OOB classification takes precedence, so if a policy is Let-burn and out-of-bounds, 
+        this function will return OOB_POL
+
         PARAMETERS
         policy: a policy of the same length as those used everywhere else
 
@@ -327,7 +347,7 @@ class SWMAnalyst:
         """
         
         #first check OOB
-        if self.check_for_OOB_policy(policy) == OOB_POL:
+        if self.check_if_OOB_policy(policy):
             return OOB_POL
         else:
             #policy is in-bounds; run the classfier if we're using one.
@@ -341,18 +361,35 @@ class SWMAnalyst:
                 #so return good_pol
                 return GOOD_POL
 
-    #Check's if a policy is in or out of bounds
-    def check_for_OOB_policy(self, policy):
+    #Check's if a policy is in or out of boundss
+    def check_if_OOB_policy(self, policy):
+        """Returns true if policy is out of bounds"""
         pol_len = 2
         if self.USING_SWM2_1: pol_len = 6
 
         for i in range(pol_len):
             #      pol[i] < lower bound for i  or     pol[i] > upper bound for i
             if (policy[i] < self.bounds[i][0]) or (policy[i] > self.bounds[i][1]):
-                return OOB_POL
+                return True
 
         #we've completed the loop without returning OOB_POL, so this must be in bounds
-        return GOOD_POL
+        return False
+
+    #Get the penalty associated with this policy for being OOB
+    def penalize_OOB_sim_value(self, policy):
+        """returns the out-of-bounds penalty for this policy"""
+        pol_len = 2
+        if self.USING_SWM2_1: pol_len = 6
+
+        furthest = 0.0
+
+        for i in range(pol_len):
+            if (policy[i] < self.bounds[i][0]):
+                furthest = max(furthest, (self.bounds[i][0] - policy[i]))
+            elif (policy[i] > self.bounds[i][1]):
+                furthest = max(furthest, (policy[i] - self.bounds[i][1]))
+
+        return (self.OOB_alpha * furthest * furthest)
 
     #Creates (if necessary) and fits a gaussian process to the data
     def fit_GP(self):
@@ -472,6 +509,7 @@ class SWMAnalyst:
 
         return coordinate_list
 
+    #gives the class, based on a suppression rate
     def _supp_to_class(self, supp_rate):
         if supp_rate >= 0.995: return SA_POL
         elif supp_rate <= 0.005: return LB_POL

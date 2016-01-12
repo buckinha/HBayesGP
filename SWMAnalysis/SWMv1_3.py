@@ -113,14 +113,14 @@ def simulate(timesteps, policy=[0,0], random_seed=0, model_parameters={}, SILENT
 
 
         #logistic function for the policy choice
-        policy_crossproduct = pol[0] + pol[1]*ev
+        policy_dotproduct = pol[0] + pol[1]*ev
         #modified logistic policy function
         #                     CONSTANT       COEFFICIENT       SHIFT
-        #policy_crossproduct = pol[0] + ( pol[1] * (ev + pol[2]) )
-        if policy_crossproduct > 100: policy_crossproduct = 100
-        if policy_crossproduct < -100: policy_crossproduct = -100
+        #policy_dotproduct = pol[0] + ( pol[1] * (ev + pol[2]) )
+        if policy_dotproduct > 100: policy_dotproduct = 100
+        if policy_dotproduct < -100: policy_dotproduct = -100
 
-        policy_value = 1.0 / (1.0 + math.exp(-1*(policy_crossproduct)))
+        policy_value = 1.0 / (1.0 + math.exp(-1*(policy_dotproduct)))
 
         choice_roll = random.uniform(0,1)
         #assume let-burn
