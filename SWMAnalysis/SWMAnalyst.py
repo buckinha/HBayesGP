@@ -28,7 +28,7 @@ class SWMAnalyst:
         #using squared OOB distance penalty?
         self.USING_OOB_PENALTY = True
         #when using the squared OOB distance penalty, what is the scaling parameter
-        self.OOB_alpha = 1.0
+        self.OOB_alpha = 0.5
 
         ## SA/LB FILTER PARAMETERS ##
         self.USING_CLASSIFIER = False
@@ -56,16 +56,19 @@ class SWMAnalyst:
         self.y_var = []
         self.supprate = []
         self.classification = []
+        self.in_bounds = [] #True for a sample that is in-bounds
         self.real_sample = [] #True for an actual sample, False for one that's been predicted
 
         ## BOUNDARIES ##
         self.bounds = []
         self.default_upper_bound_value =  25.0
         self.default_lower_bound_value = -25.0
+        self.default_penalty_distance = 3
+        self.penalty_bounds = []
         self.set_bounds()
 
         ## DATA GENERATION PARAMETERS ##
-        self.grid_sampling_density = 1.0
+        self.grid_sampling_density = 6.0
 
         ## GAUSSIAN PROCESS OBJECT ##
         #this will be instantiated the first time that data is recieved
@@ -85,7 +88,7 @@ class SWMAnalyst:
             self.set_bounds()
         else:
             self.USING_SWM2_1 = False
-            self.grid_sampling_density = 2.0
+            self.grid_sampling_density = 6.0
             self.set_bounds()
 
     #Gets a single SWMv1.3 or SWMv2.1 "sample"
@@ -214,6 +217,7 @@ class SWMAnalyst:
             new_X = []
             new_supprate = []
             new_class = []
+            new_inbounds = []
             new_real = []
 
             print("Policies generated. Simulating...")
@@ -222,8 +226,11 @@ class SWMAnalyst:
                 #check filters
                 pol_type = self.classify_policy(p)
 
-                if pol_type == OOB_POL:
-                    #it's an out-of-bounds policy (and OOB is being enforced)
+                #check bounds
+                pol_oob = self.check_if_OOB_policy(p)
+
+                if pol_oob:
+                    #it's an out-of-bounds policy
                     if not self.USING_OOB_PENALTY:
                         #just using the default OOB values
                         new_y.append(self.OOB_default_mean + 1 - 1)
@@ -231,6 +238,7 @@ class SWMAnalyst:
                         new_X.append(p[:])
                         new_supprate.append(0.5) #TODO What should it be???
                         new_class.append(GOOD_POL)
+                        new_inbounds.append(False)
                         new_real.append(False)
 
                     else:
@@ -244,6 +252,7 @@ class SWMAnalyst:
                         new_X.append(_X)
                         new_supprate.append(_supp)
                         new_class.append(self._supp_to_class(_supp))
+                        new_inbounds.append(False)
                         new_real.append(True)
 
 
@@ -255,6 +264,7 @@ class SWMAnalyst:
                     new_X.append(p[:])
                     new_supprate.append(0.0)
                     new_class.append(LB_POL)
+                    new_inbounds.append(True)
                     new_real.append(False)
 
                 elif pol_type == SA_POL:
@@ -265,6 +275,7 @@ class SWMAnalyst:
                     new_X.append(p[:])
                     new_supprate.append(1.0)
                     new_class.append(SA_POL)
+                    new_inbounds.append(True)
                     new_real.append(False)
 
                 else:
@@ -275,6 +286,7 @@ class SWMAnalyst:
                     new_X.append(_X)
                     new_supprate.append(_supp)
                     new_class.append(self._supp_to_class(_supp))
+                    new_inbounds.append(True)
                     new_real.append(True)
 
 
@@ -284,6 +296,7 @@ class SWMAnalyst:
             self.X = self.X + new_X
             self.supprate = self.supprate + new_supprate
             self.classification = self.classification + new_class
+            self.in_bounds = self.in_bounds + new_inbounds
             self.real_sample = self.real_sample + new_real
 
             print("Simulations complete. Fitting GP...")
@@ -333,33 +346,26 @@ class SWMAnalyst:
 
     #Check's a policy against the current classifier system
     def classify_policy(self, policy):
-        """ Runs the classifier and bounds checks, and returns an integer reflecting the policy type
-
-        The OOB classification takes precedence, so if a policy is Let-burn and out-of-bounds, 
-        this function will return OOB_POL
+        """ Runs the classifier (but not a bounds check), and returns an integer reflecting the policy type
 
         PARAMETERS
         policy: a policy of the same length as those used everywhere else
 
         RETURNS
         policy type: an integer set to equal one of the following constants:
-            GOOD_POL, SA_POL, LB_POL, OOB_POL
+            GOOD_POL, SA_POL, LB_POL
         """
         
-        #first check OOB
-        if self.check_if_OOB_policy(policy):
-            return OOB_POL
+        #policy is in-bounds; run the classfier if we're using one.
+        if self.USING_CLASSIFIER:
+            pol_type = self.classfier.predict([policy])
+            #it returns a list of predictions from a list of policies
+            # so just return the first element of that list, which should be the prediction
+            return pol_type[0]  
         else:
-            #policy is in-bounds; run the classfier if we're using one.
-            if self.USING_CLASSIFIER:
-                pol_type = self.classfier.predict([policy])
-                #it returns a list of predictions from a list of policies
-                # so just return the first element of that list, which should be the prediction
-                return pol_type[0]  
-            else:
-                #it was in bounds, and we're not bothering with a classifier,
-                #so return good_pol
-                return GOOD_POL
+            #it was in bounds, and we're not bothering with a classifier,
+            #so return good_pol
+            return GOOD_POL
 
     #Check's if a policy is in or out of boundss
     def check_if_OOB_policy(self, policy):
@@ -372,7 +378,7 @@ class SWMAnalyst:
             if (policy[i] < self.bounds[i][0]) or (policy[i] > self.bounds[i][1]):
                 return True
 
-        #we've completed the loop without returning OOB_POL, so this must be in bounds
+        #we've completed the loop without returning True, so this must be in bounds
         return False
 
     #Get the penalty associated with this policy for being OOB
@@ -384,10 +390,10 @@ class SWMAnalyst:
         furthest = 0.0
 
         for i in range(pol_len):
-            if (policy[i] < self.bounds[i][0]):
-                furthest = max(furthest, (self.bounds[i][0] - policy[i]))
-            elif (policy[i] > self.bounds[i][1]):
-                furthest = max(furthest, (policy[i] - self.bounds[i][1]))
+            if (policy[i] < self.penalty_bounds[i][0]):
+                furthest = max(furthest, (self.penalty_bounds[i][0] - policy[i]))
+            elif (policy[i] > self.penalty_bounds[i][1]):
+                furthest = max(furthest, (policy[i] - self.penalty_bounds[i][1]))
 
         return (self.OOB_alpha * furthest * furthest)
 
@@ -415,15 +421,84 @@ class SWMAnalyst:
     def set_bounds(self, new_bounds=None):
         lb = self.default_lower_bound_value
         ub = self.default_upper_bound_value
+        plb = lb + self.default_penalty_distance
+        pub = ub - self.default_penalty_distance
         if not new_bounds:
             if self.USING_SWM2_1:
                 self.bounds = [[lb,ub],[lb,ub],[lb,ub],[lb,ub],[lb,ub],[lb,ub]]
+                self.penalty_bounds = [[plb,pub],[plb,pub],[plb,pub],[plb,pub],[plb,pub],[plb,pub]]
             else:
                 self.bounds = [[lb,ub],[lb,ub]]
+                self.penalty_bounds = [[plb,pub],[plb,pub]]
         else:
             self.bounds = new_bounds[:]
+            _p = self.default_penalty_distance
+            self.penalty_bounds = [ [new_bounds[i][0] + _p, new_bounds[i][1] - _p] for i in len(new_bounds)]
 
+    #report stats on current data set
+    def report_all(self):
+        """
+        Reports:
+        Dataset size
+        Best Value
+        Best Policy
+        Number/Percent of LB, SA data points
+        Number/Percent OOB data points
+        Current Length Scale
+        General Bounds
+        LBFGS-B Bounds
+        """
 
+        #get counts
+        all_sims = len(self.y)
+        real_sims = len([i for i in self.real_sample if i])
+        est_sims = all_sims - real_sims
+
+        sa_sims = len([c for c, r in zip(self.classification, self.real_sample) if ((c == SA_POL) and (r))])
+        lb_sims = len([c for c, r in zip(self.classification, self.real_sample) if ((c == LB_POL) and (r))])
+        good_sims = len([c for c, r in zip(self.classification, self.real_sample) if ((c == GOOD_POL) and (r))])
+
+        oob_sims = len([b for b, r in zip(self.in_bounds, self.real_sample) if ((not b) and (r))])
+
+        print("Dataset Size, ALL:  {0}".format(all_sims))
+        print("Dataset Size, Real: {0}  ({1}%)".format(real_sims, (round((100 * real_sims / all_sims),3))))
+        print("Dataset Size, Est:  {0}  ({1}%)".format(est_sims, (round((100 * est_sims / all_sims),3))))
+        print("")
+        print("Actual SWM simulations per sample point: {0}".format(self.sims_per_sample))
+        print("Total SWM simulations rum: {0}".format(self.sims_per_sample * real_sims))
+        print("Highest Value Seen: {0}".format(max(self.y)))
+        print("Highest Val. Policy: {0}".format(repr(self.GP.history_global_best_coords)))
+        print("")
+        print("Classifcations of Real Simulations (excluding estimated sims)")
+        print("Good Simulations: {0}   ({1}%)".format(good_sims, (round((100 * good_sims / real_sims),3))))
+        print("SA Simulations:   {0}   ({1}%)".format(sa_sims,   (round((100 * sa_sims / real_sims),3))))
+        print("LB Simulations:   {0}   ({1}%)".format(lb_sims,   (round((100 * lb_sims / real_sims),3))))
+        print("Total:            {0}".format(sa_sims + lb_sims + good_sims))
+        print("")
+        print("OOB Simulations:  {0}".format(oob_sims))
+        print("")
+        print("Most Recent Length Scale: {0}".format(self.GP.gp_length_scale))
+        print("Bounds: {0}".format(repr(self.bounds)))
+
+    #clear all data but leave other settings as-is
+    def clear_data(self):
+
+        ## Re-nitilaize classifier ##
+        self.classfier = None
+        self._init_classifier()
+        
+        ## DATA ##
+        self.X = []
+        self.y = []
+        self.y_var = []
+        self.supprate = []
+        self.classification = []
+        self.in_bounds = []
+        self.real_sample = [] #True for an actual sample, False for one that's been predicted
+
+        ## GAUSSIAN PROCESS OBJECT ##
+        #this will be instantiated the first time that data is recieved
+        self.GP = None
 
     ### PRIVATE FUNCTIONS ###
 

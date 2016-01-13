@@ -65,11 +65,11 @@ class HBayesGP:
         # the lower and upper bounds of the same-indexed element of any x vector
         if not bounds:
             self.bounds = [  [float("-inf"), float("inf")] for i in range(len(self.X[0])) ]
-            self.lbfgs_bounds = [  [float("-inf"), float("inf")] for i in range(len(self.X[0])) ]
+            #self.lbfgs_bounds = [  [float("-inf"), float("inf")] for i in range(len(self.X[0])) ]
         else:
             self.bounds = bounds
-            self.lbfgs_buffer = 5.0
-            self.lbfgs_bounds = [ [b[0]-self.lbfgs_buffer, b[1]+self.lbfgs_buffer] for b in self.bounds]
+            #self.lbfgs_buffer = 5.0
+            #self.lbfgs_bounds = [ [b[0]-self.lbfgs_buffer, b[1]+self.lbfgs_buffer] for b in self.bounds]
 
         #start the global bests list
         self.global_bests_count = min(10, len(self.y))
@@ -87,10 +87,10 @@ class HBayesGP:
 
     ### PUBLIC FUNCTIONS ###
 
-    def set_bounds(self, bounds, lbfgs_buffer=5.0):
+    def set_bounds(self, bounds):#, lbfgs_buffer=5.0):
         self.bounds = bounds[:]
-        self.lbfgs_buffer = lbfgs_buffer
-        self.lbfgs_bounds = [ [b[0]-self.lbfgs_buffer, b[1]+self.lbfgs_buffer] for b in self.bounds]
+        #self.lbfgs_buffer = lbfgs_buffer
+        #self.lbfgs_bounds = [ [b[0]-self.lbfgs_buffer, b[1]+self.lbfgs_buffer] for b in self.bounds]
 
     #add data to the model and re-fit the GP
     def add_data(self, X, y, y_var=None, NO_FIT=False):
@@ -182,7 +182,7 @@ class HBayesGP:
                 print("  No new data were added to the model.")
 
     #use the gp to predict the value of y at coordinates x
-    def predict(x):
+    def predict(self, x):
         """ Predicts the y value and variance from the gaussian process at coordinate x
 
         PARAMETERS
@@ -1038,7 +1038,8 @@ class HBayesGP:
         def neg_uconf(x):
             return self._max_conf(x) * -1.0
 
-        result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.lbfgs_bounds)
+        #result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.lbfgs_bounds)
+        result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.bounds)
 
 
         return result.x
