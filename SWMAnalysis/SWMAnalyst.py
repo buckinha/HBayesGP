@@ -480,6 +480,10 @@ class SWMAnalyst:
         print("Most Recent Length Scale: {0}".format(self.GP.gp_length_scale))
         print("Bounds: {0}".format(repr(self.bounds)))
 
+    #plot the first two dimensions of the GP
+    def plot_gp(self, dim0=1, dim1=0):
+        self.GP.plot_gp(self.bounds[0],self.bounds[1],50,0,dim0,dim1)
+
     #clear all data but leave other settings as-is
     def clear_data(self):
 
