@@ -28,7 +28,7 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
     
     random.seed(random_seed)
     
-    #range of the randomly drawn, uniformally distributed "event" that corresponds to "heat" and "moisture"
+    #range of the randomly drawn, uniformally distributed "event" that corresponds to fire severity
     event_max = 1.0
     event_min = 0.0
 
@@ -36,13 +36,9 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
     vuln_max = 1.0
     vuln_min = 0.02
 
-    timber_max = 1.0
+    timber_max = 10.0
     timber_min = 0.0
     
-    #timber multiplier: this is to scale the rewards while leaving the raw timber values between 0 and 1
-    timber_multiplier = 10.0
-
-
 
     timesteps = int(timesteps)
 
@@ -103,9 +99,9 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
     #starting_condition = 0.8
     starting_Vulnerability = random.uniform(0.2,0.8)
     if "Starting Vulnerability" in model_parameters.keys(): starting_condition = model_parameters["Starting Condition"]
-    starting_timber = random.uniform(0.2,0.8)
+    starting_timber = random.uniform(2.0,8.0)
     if "Starting Timber Value" in model_parameters.keys(): starting_timber = model_parameters["Starting Timber Value"]
-    starting_habitat = random.uniform(0.2,0.8)
+    starting_habitat = random.uniform(2.0,8.0)
     if "Starting Habitat Value" in model_parameters.keys(): starting_habitat = model_parameters["Starting Habitat Value"]
 
     #setting 'enums'
@@ -178,7 +174,7 @@ def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}
                 #this is modeling the timber values lost in a large fire.
                 burn_penalty = burn_cost
 
-        current_reward = (timber_multiplier * current_timber) - supp_cost - burn_penalty
+        current_reward = 10 + current_timber - supp_cost - burn_penalty
         #current_reward = 10 + (timber_multiplier * current_timber) - supp_cost - burn_penalty
 
 
