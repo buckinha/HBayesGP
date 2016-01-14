@@ -1,7 +1,7 @@
 import SWMv1_3 as SWM1
 import SWMv2_1 as SWM2
 import HBayesGP
-import random
+import random, datetime
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
@@ -503,6 +503,203 @@ class SWMAnalyst:
         ## GAUSSIAN PROCESS OBJECT ##
         #this will be instantiated the first time that data is recieved
         self.GP = None
+
+
+    #create R file to plot the Monte Carlo value surface for SWM1
+    def output_SWM1_MC_surface(self, timesteps=200, p0_step=0.5, p1_step=0.5, VALUE_ON_HABITAT=False, PROBABILISTIC_CHOICES=True, OUTPUT_FOR_SCILAB=True):
+        """Step through the SWM1 policy space and get the monte carlo net values at each policy point"""
+
+        p0_range=self.bounds[0]
+        p1_range=self.bounds[1]
+
+        start_time = "Started:  " + str(datetime.datetime.now())
+
+        #get step counts and starting points
+        p0_step_count = int(  abs(p0_range[1] - p0_range[0]) / p0_step  ) + 1
+        p1_step_count = int(  abs(p1_range[1] - p1_range[0]) / p1_step  ) + 1
+        p0_start = p0_range[0]
+        if p0_range[1] < p0_range[0]: p0_start = p0_range[1]
+        p1_start = p1_range[0]
+        if p1_range[1] < p1_range[0]: p1_start = p1_range[1]
+
+
+        #create the rows/columns structure
+        p1_rows = [None] * p1_step_count
+        for i in range(p1_step_count):
+            p1_rows[i] = [None] * p0_step_count
+
+
+        #step through the polcies and generate monte carlo rollouts, and save their average value
+        pathways = [None]*self.sims_per_sample
+
+        for row in range(p1_step_count):
+            for col in range(p0_step_count):
+                p0_val = p0_start + col*p0_step
+                p1_val = p1_start + row*p1_step
+              
+                for i in range(self.sims_per_sample):
+                    pathways[i] = SWM1.simulate(timesteps=timesteps, policy=[p0_val,p1_val], random_seed=(5000+i), SILENT=True)
+
+                #get the average value
+                val_sum = 0.0
+                for i in range(self.sims_per_sample):
+                    if VALUE_ON_HABITAT:
+                        val_sum += pathways[i]["Average Habitat Value"]
+                    else:
+                        val_sum += pathways[i]["Average State Value"]
+
+                val_avg = val_sum / self.sims_per_sample
+
+                p1_rows[row][col] = val_avg
+
+
+        end_time = "Finished: " + str(datetime.datetime.now())
+
+        #finished gathering output strings, now write them to the file
+        f = open('pathway_value_graph_1.txt', 'w')
+
+        #Writing Header
+        f.write("SWMv1_3_Trials.pathway_value_graph_1()\n")
+        if VALUE_ON_HABITAT:
+            f.write("Values are of the Habitat Value index\n")
+        else:
+            f.write("Values are of Logging Receipts - Suppression Cost\n")
+        f.write(start_time + "\n")
+        f.write(end_time + "\n")
+        f.write("Pathways per Point: " + str(self.sims_per_sample) +"\n")
+        f.write("Timesteps per Pathway: " + str(timesteps) +"\n")
+        f.write("P0 Range: " + str(p0_range) +"\n")
+        f.write("P1 Range: " + str(p1_range) +"\n")
+
+        #writing model parameters from whatever's still in the pathway set.
+        # the model parameters don't change from one M.C batch to another.
+        f.write("\n")
+        f.write("Vulnerability Min: " + str(pathways[0]["Vulnerability Min"]) + "\n")
+        f.write("Vulnerability Max: " + str(pathways[0]["Vulnerability Max"]) + "\n")
+        f.write("Vulnerability Change After Suppression: " + str(pathways[0]["Vulnerability Change After Suppression"]) + "\n")
+        f.write("Vulnerability Change After Mild: " + str(pathways[0]["Vulnerability Change After Mild"]) + "\n")
+        f.write("Vulnerability Change After Severe: " + str(pathways[0]["Vulnerability Change After Severe"]) + "\n")
+        f.write("Timber Value Min: " + str(pathways[0]["Timber Value Min"]) + "\n")
+        f.write("Timber Value Max: " + str(pathways[0]["Timber Value Max"]) + "\n")
+        f.write("Timber Value Change After Suppression: " + str(pathways[0]["Timber Value Change After Suppression"]) + "\n")
+        f.write("Timber Value Change After Mild: " + str(pathways[0]["Timber Value Change After Mild"]) + "\n")
+        f.write("Timber Value Change After Severe: " + str(pathways[0]["Timber Value Change After Severe"]) + "\n")
+        f.write("Suppression Cost - Mild: " + str(pathways[0]["Suppression Cost - Mild"]) + "\n")
+        f.write("Suppression Cost - Severe: " + str(pathways[0]["Suppression Cost - Severe"]) + "\n")
+        f.write("Severe Burn Cost: " + str(pathways[0]["Severe Burn Cost"]) + "\n")
+        f.write("\n")
+
+        if not OUTPUT_FOR_SCILAB:
+            #Writing Data for Excel
+            f.write(",,Parameter 0\n")
+            f.write(",,")
+            for i in range(p0_step_count):
+                f.write( str( p0_start + i*p0_step ) + ",")
+            f.write("\n")
+            f.write("Paramter 1")
+            for row in range(p1_step_count):
+                f.write(",")
+                #write the p1 value
+                f.write( str( p1_start + row*p1_step ) + "," )
+
+                for col in range(p0_step_count):
+                    f.write( str(p1_rows[row][col]) + "," )
+                f.write("\n")
+        else:
+            #Writing Data for Scilab
+            f.write("Scilab Matrix\n")
+            for row in range(p1_step_count):
+
+                for col in range(p0_step_count):
+                    f.write( str(p1_rows[row][col]) + " " )
+                f.write("\n")
+
+        f.close()
+
+    #create R file to plot the suppression rate map for SWM1
+    def suppression_rate_map(self, timesteps=200, p0_step=0.5, p1_step=0.5):
+        """Step through the policy space and map the percentage suppression at policies throughout the space"""
+
+        start_time = "Started:  " + str(datetime.datetime.now())
+
+        p0_range=self.bounds[0]
+        p1_range=self.bounds[1]
+
+        #get step counts and starting points
+        p0_step_count = int(  abs(p0_range[1] - p0_range[0]) / p0_step  ) + 1
+        p1_step_count = int(  abs(p1_range[1] - p1_range[0]) / p1_step  ) + 1
+        p0_start = p0_range[0]
+        if p0_range[1] < p0_range[0]: p0_start = p0_range[1]
+        p1_start = p1_range[0]
+        if p1_range[1] < p1_range[0]: p1_start = p1_range[1]
+
+
+        #create the rows/columns structure
+        p1_rows = [None] * p1_step_count
+        for i in range(p1_step_count):
+            p1_rows[i] = [None] * p0_step_count
+
+
+        #step through the polcies and generate monte carlo rollouts, and save their average value
+        pathways = [None]*self.sims_per_sample
+
+        for row in range(p1_step_count):
+            for col in range(p0_step_count):
+                p0_val = p0_start + col*p0_step
+                p1_val = p1_start + row*p1_step
+              
+                for i in range(self.sims_per_sample):
+                    pathways[i] = SWM1.simulate(timesteps=timesteps, policy=[p0_val,p1_val,0], random_seed=(5000+i), SILENT=True)
+
+                #get the suppression percentage
+                p1_rows[row][col] = pathways[i]["Suppression Rate"]
+
+
+        end_time = "Finished: " + str(datetime.datetime.now())
+
+        #finished gathering output strings, now write them to the file
+        f = open('suppression_rate_map.txt', 'w')
+
+        #Writing Header
+        f.write("SWMv1_3_Trials.suppression_rate_map()\n")
+        f.write(start_time + "\n")
+        f.write(end_time + "\n")
+        f.write("Pathways per Point: " + str(self.sims_per_sample) +"\n")
+        f.write("Timesteps per Pathway: " + str(timesteps) +"\n")
+        f.write("P0 Range: " + str(p0_range) +"\n")
+        f.write("P1 Range: " + str(p1_range) +"\n")
+
+        #writing model parameters from whatever's still in the pathway set.
+        # the model parameters don't change from one M.C batch to another.
+        f.write("\n")
+        f.write("Vulnerability Min: " + str(pathways[0]["Vulnerability Min"]) + "\n")
+        f.write("Vulnerability Max: " + str(pathways[0]["Vulnerability Max"]) + "\n")
+        f.write("Vulnerability Change After Suppression: " + str(pathways[0]["Vulnerability Change After Suppression"]) + "\n")
+        f.write("Vulnerability Change After Mild: " + str(pathways[0]["Vulnerability Change After Mild"]) + "\n")
+        f.write("Vulnerability Change After Severe: " + str(pathways[0]["Vulnerability Change After Severe"]) + "\n")
+        f.write("Timber Value Min: " + str(pathways[0]["Timber Value Min"]) + "\n")
+        f.write("Timber Value Max: " + str(pathways[0]["Timber Value Max"]) + "\n")
+        f.write("Timber Value Change After Suppression: " + str(pathways[0]["Timber Value Change After Suppression"]) + "\n")
+        f.write("Timber Value Change After Mild: " + str(pathways[0]["Timber Value Change After Mild"]) + "\n")
+        f.write("Timber Value Change After Severe: " + str(pathways[0]["Timber Value Change After Severe"]) + "\n")
+        f.write("Suppression Cost - Mild: " + str(pathways[0]["Suppression Cost - Mild"]) + "\n")
+        f.write("Suppression Cost - Severe: " + str(pathways[0]["Suppression Cost - Severe"]) + "\n")
+        f.write("Severe Burn Cost: " + str(pathways[0]["Severe Burn Cost"]) + "\n")
+        f.write("\n")
+
+
+        #Writing Data
+        f.write("\n")
+        for row in range(p1_step_count):
+
+            for col in range(p0_step_count):
+                f.write( str(p1_rows[row][col]) + " " )
+            f.write("\n")
+
+
+
+        f.close()
+
 
     ### PRIVATE FUNCTIONS ###
 
