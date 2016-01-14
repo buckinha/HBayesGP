@@ -334,14 +334,14 @@ def policy_function(feature_vector, policy, vector_length_scaling=False):
     transformed_features = [1.0] + transformed_features
 
     #do the raw crossproduct of the features times the values
-    cross_product = np.sum(  [transformed_features[i] * policy[i] for i in range(len(policy))]  )
+    dot_product = np.sum(  [transformed_features[i] * policy[i] for i in range(len(policy))]  )
 
     #do the vector length scaling step, if desired
     if vector_length_scaling:
-        cross_product = cross_product * (1.0 / np.sqrt(len(policy)))
+        dot_product = dot_product * (1.0 / np.sqrt(len(policy)))
 
     #get the logistic function value
-    func_val = 1.0 / (1.0 + np.exp(-1.0 * cross_product))
+    func_val = 1.0 / (1.0 + np.exp(-1.0 * dot_product))
 
     return func_val
 

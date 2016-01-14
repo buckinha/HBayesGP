@@ -1,6 +1,7 @@
 """SWM, A Simple Wildfire-inspired MDP model. Version 1.3"""
 
 import random, math, numpy, MDP
+from feature_transformation import heat_transformation as heat_trans
 
 def simulate(timesteps, policy=[0,0], random_seed=0, model_parameters={}, SILENT=False, PROBABILISTIC_CHOICES=True):
     
@@ -113,7 +114,7 @@ def simulate(timesteps, policy=[0,0], random_seed=0, model_parameters={}, SILENT
 
 
         #logistic function for the policy choice
-        policy_dotproduct = pol[0] + pol[1]*ev
+        policy_dotproduct = pol[0] + pol[1]*heat_trans(ev)
         #modified logistic policy function
         #                     CONSTANT       COEFFICIENT       SHIFT
         #policy_dotproduct = pol[0] + ( pol[1] * (ev + pol[2]) )
