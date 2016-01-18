@@ -1,6 +1,6 @@
 import SWMv1_3 as SWM1
 import SWMv2_1 as SWM2
-import HBayesGP
+import HBayesGP, R_plotting
 import random, datetime
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -561,9 +561,9 @@ class SWMAnalyst:
         dim1_vector = [dim1_start + (i*dim1_step) for i in range(dim1_step_count)]
 
         #create the rows/columns structure
-        val_rows = [ [0.0] * dim0_step_count for i in range(dim1_step_count) ]
-        var_rows = [ [0.0] * dim0_step_count for i in range(dim1_step_count) ]
-        supp_rows = [ [0.0] * dim0_step_count for i in range(dim1_step_count) ]
+        val_cols = [ [0.0] * dim1_step_count for i in range(dim0_step_count) ]
+        var_cols = [ [0.0] * dim1_step_count for i in range(dim0_step_count) ]
+        supp_cols = [ [0.0] * dim1_step_count for i in range(dim0_step_count) ]
 
 
         #step through the polcies and generate monte carlo rollouts, and save their average values
@@ -580,9 +580,9 @@ class SWMAnalyst:
                 #self.SWM_sample(policy) returns: y, var, policy, supprate
                 _y, _var, _pol, _supp = self.SWM_sample(_cur_pol)
 
-                val_rows[row][col] = _y
-                var_rows[row][col] = _var
-                supp_rows[row][col] = _supp
+                val_cols[col][row] = _y
+                var_cols[col][row]= _var
+                supp_cols[col][row] = _supp
 
 
         end_time = "Finished: " + str(datetime.datetime.now())
@@ -625,9 +625,9 @@ class SWMAnalyst:
 
         for row in range(dim1_step_count):
             for col in range(dim0_step_count):
-                f.write(     str(val_rows[row][col]))
-                f_var.write( str(var_rows[row][col]))
-                f_supp.write(str(supp_rows[row][col]))
+                f.write(     str(val_cols[col][row]))
+                f_var.write( str(var_cols[col][row]))
+                f_supp.write(str(supp_cols[col][row]))
                 if col < (dim0_step_count - 1):
                     f.write(" ")
                     f_var.write(" ")
@@ -641,90 +641,51 @@ class SWMAnalyst:
         f_var.close()
         f_supp.close()
 
-    #create R file to plot the suppression rate map for SWM1
-    def suppression_rate_map(self, timesteps=200, p0_step=0.5, p1_step=0.5):
-        """Step through the policy space and map the percentage suppression at policies throughout the space"""
+        #now create the actual R plots, since the data has been written
+        #figure out which titles and labels to use
+        xlab=""
+        ylab=""
+        title=""
+        if dim1 == 0:
+            title = title + "Constant vs "
+            ylab = "Policy Constant"
+        if dim1 == 1:
+            title = title + "Weather vs "
+            ylab = "Policy Parameter on Weather Severity"
+        if dim1 == 2:
+            title = title + "Moisture vs "
+            ylab = "Policy Parameter on Moisture"
+        if dim1 == 3:
+            title = title + "Timber vs "
+            ylab = "Policy Parameter on Timber"
+        if dim1 == 4:
+            title = title + "Vulnerability vs "
+            ylab = "Policy Parameter on Vulnerability"
+        if dim1 == 5:
+            title = title + "Habitat vs "
+            ylab = "Policy Parameter on Habitat"
 
-        start_time = "Started:  " + str(datetime.datetime.now())
+        
+        if dim0 == 0:
+            title = title + "Constant"
+            xlab = "Policy Constant"
+        if dim0 == 1:
+            title = title + "Weather"
+            xlab = "Policy Parameter on Weather Severity"
+        if dim0 == 2:
+            title = title + "Moisture"
+            xlab = "Policy Parameter on Moisture"
+        if dim0 == 3:
+            title = title + "Timber"
+            xlab = "Policy Parameter on Timber"
+        if dim0 == 4:
+            title = title + "Vulnerability"
+            xlab = "Policy Parameter on Vulnerability"
+        if dim0 == 5:
+            title = title + "Habitat"
+            xlab = "Policy Parameter on Habitat"
 
-        p0_range=self.bounds[0]
-        p1_range=self.bounds[1]
-
-        #get step counts and starting points
-        p0_step_count = int(  abs(p0_range[1] - p0_range[0]) / p0_step  ) + 1
-        p1_step_count = int(  abs(p1_range[1] - p1_range[0]) / p1_step  ) + 1
-        p0_start = p0_range[0]
-        if p0_range[1] < p0_range[0]: p0_start = p0_range[1]
-        p1_start = p1_range[0]
-        if p1_range[1] < p1_range[0]: p1_start = p1_range[1]
-
-
-        #create the rows/columns structure
-        p1_rows = [None] * p1_step_count
-        for i in range(p1_step_count):
-            p1_rows[i] = [None] * p0_step_count
-
-
-        #step through the polcies and generate monte carlo rollouts, and save their average value
-        pathways = [None]*self.sims_per_sample
-
-        for row in range(p1_step_count):
-            for col in range(p0_step_count):
-                p0_val = p0_start + col*p0_step
-                p1_val = p1_start + row*p1_step
-              
-                for i in range(self.sims_per_sample):
-                    pathways[i] = SWM1.simulate(timesteps=timesteps, policy=[p0_val,p1_val,0], random_seed=(5000+i), SILENT=True)
-
-                #get the suppression percentage
-                p1_rows[row][col] = pathways[i]["Suppression Rate"]
-
-
-        end_time = "Finished: " + str(datetime.datetime.now())
-
-        #finished gathering output strings, now write them to the file
-        f = open('suppression_rate_map.txt', 'w')
-
-        #Writing Header
-        f.write("SWMv1_3_Trials.suppression_rate_map()\n")
-        f.write(start_time + "\n")
-        f.write(end_time + "\n")
-        f.write("Pathways per Point: " + str(self.sims_per_sample) +"\n")
-        f.write("Timesteps per Pathway: " + str(timesteps) +"\n")
-        f.write("P0 Range: " + str(p0_range) +"\n")
-        f.write("P1 Range: " + str(p1_range) +"\n")
-
-        #writing model parameters from whatever's still in the pathway set.
-        # the model parameters don't change from one M.C batch to another.
-        f.write("\n")
-        f.write("Vulnerability Min: " + str(pathways[0]["Vulnerability Min"]) + "\n")
-        f.write("Vulnerability Max: " + str(pathways[0]["Vulnerability Max"]) + "\n")
-        f.write("Vulnerability Change After Suppression: " + str(pathways[0]["Vulnerability Change After Suppression"]) + "\n")
-        f.write("Vulnerability Change After Mild: " + str(pathways[0]["Vulnerability Change After Mild"]) + "\n")
-        f.write("Vulnerability Change After Severe: " + str(pathways[0]["Vulnerability Change After Severe"]) + "\n")
-        f.write("Timber Value Min: " + str(pathways[0]["Timber Value Min"]) + "\n")
-        f.write("Timber Value Max: " + str(pathways[0]["Timber Value Max"]) + "\n")
-        f.write("Timber Value Change After Suppression: " + str(pathways[0]["Timber Value Change After Suppression"]) + "\n")
-        f.write("Timber Value Change After Mild: " + str(pathways[0]["Timber Value Change After Mild"]) + "\n")
-        f.write("Timber Value Change After Severe: " + str(pathways[0]["Timber Value Change After Severe"]) + "\n")
-        f.write("Suppression Cost - Mild: " + str(pathways[0]["Suppression Cost - Mild"]) + "\n")
-        f.write("Suppression Cost - Severe: " + str(pathways[0]["Suppression Cost - Severe"]) + "\n")
-        f.write("Severe Burn Cost: " + str(pathways[0]["Severe Burn Cost"]) + "\n")
-        f.write("\n")
-
-
-        #Writing Data
-        f.write("\n")
-        for row in range(p1_step_count):
-
-            for col in range(p0_step_count):
-                f.write( str(p1_rows[row][col]) + " " )
-            f.write("\n")
-
-
-
-        f.close()
-
+        R_plotting.create_R_plots(dim0_vector, dim1_vector, title, xlab, ylab)
 
     ### PRIVATE FUNCTIONS ###
 
