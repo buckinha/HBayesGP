@@ -16,6 +16,7 @@ class SWMAnalyst:
         ## SAMPLING PARAMETERS ##
         self.sims_per_sample = 20
         self.USING_SWM2_1 = False
+        self.SWM2_dimensions = 6
 
         ## OUT-OF-BOUNDS PARAMETERS ##
         #whether or not to filter out-of-bounds policies. If True, these policies
@@ -111,7 +112,7 @@ class SWMAnalyst:
         ----------
         policy: a list represnting the policy vector, which is the same thing as a 
             coordinate for the gaussian process. For SWMv1.3, this should be a 
-            vector with length = 2.  For SWMv2.1, this should be a length 6 vector
+            vector with length = 2.  For SWMv2.1, this should be a length 6 (or longer?) vector
 
 
         RETURNS
@@ -173,7 +174,7 @@ class SWMAnalyst:
         """
 
         pol_len = 2
-        if self.USING_SWM2_1: pol_len = 6
+        if self.USING_SWM2_1: pol_len = self.SWM2_dimensions
 
 
         #checking for an instantiated GP object
@@ -371,7 +372,7 @@ class SWMAnalyst:
     def check_if_OOB_policy(self, policy):
         """Returns true if policy is out of bounds"""
         pol_len = 2
-        if self.USING_SWM2_1: pol_len = 6
+        if self.USING_SWM2_1: pol_len = self.SWM2_dimensions
 
         for i in range(pol_len):
             #      pol[i] < lower bound for i  or     pol[i] > upper bound for i
@@ -385,7 +386,7 @@ class SWMAnalyst:
     def penalize_OOB_sim_value(self, policy):
         """returns the out-of-bounds penalty for this policy"""
         pol_len = 2
-        if self.USING_SWM2_1: pol_len = 6
+        if self.USING_SWM2_1: pol_len = self.SWM2_dimensions
 
         furthest = 0.0
 
@@ -417,13 +418,13 @@ class SWMAnalyst:
         #and pass the fit command on down (ultimately to an sklearn.gaussian_process)
         self.GP._fit()
 
-    #sets bounds to given, or to default values
+    #sets bounds to given, or to default values if no args are given
     def set_bounds(self, new_bounds=None):
-        lb = self.default_lower_bound_value
-        ub = self.default_upper_bound_value
-        plb = lb + self.default_penalty_distance
-        pub = ub - self.default_penalty_distance
         if not new_bounds:
+            lb = self.default_lower_bound_value
+            ub = self.default_upper_bound_value
+            plb = lb + self.default_penalty_distance
+            pub = ub - self.default_penalty_distance
             if self.USING_SWM2_1:
                 self.bounds = [[lb,ub],[lb,ub],[lb,ub],[lb,ub],[lb,ub],[lb,ub]]
                 self.penalty_bounds = [[plb,pub],[plb,pub],[plb,pub],[plb,pub],[plb,pub],[plb,pub]]
@@ -467,7 +468,7 @@ class SWMAnalyst:
         print("Actual SWM simulations per sample point: {0}".format(self.sims_per_sample))
         print("Total SWM simulations rum: {0}".format(self.sims_per_sample * real_sims))
         print("Highest Value Seen: {0}".format(max(self.y)))
-        print("Highest Val. Policy: {0}".format(repr(self.GP.history_global_best_coords)))
+        print("Highest Val. Policy: {0}".format(repr(self.GP.current_global_best_coord)))
         print("")
         print("Classifcations of Real Simulations (excluding estimated sims)")
         print("Good Simulations: {0}   ({1}%)".format(good_sims, (round((100 * good_sims / real_sims),3))))
@@ -505,116 +506,140 @@ class SWMAnalyst:
         self.GP = None
 
 
-    #create R file to plot the Monte Carlo value surface for SWM1
-    def output_SWM1_MC_surface(self, timesteps=200, p0_step=0.5, p1_step=0.5, VALUE_ON_HABITAT=False, PROBABILISTIC_CHOICES=True, OUTPUT_FOR_SCILAB=True):
-        """Step through the SWM1 policy space and get the monte carlo net values at each policy point"""
+    #create R file to plot the Monte Carlo value surface
+    def output_MC_surfaces(self, dim0=1, dim1=0, default_policy=[0,0,0,0,0,0], dim0_step=0.5, dim1_step=0.5, VALUE_ON_HABITAT=False):
+        """Step through the SWM policy space and get the monte carlo net values at each policy point
 
-        p0_range=self.bounds[0]
-        p1_range=self.bounds[1]
+
+        PARAMETERS
+        dim0: the integer index value of the policy parameter on the graph's horizontal axis
+        dim1: the integer index value of the policy parameter on the graph's vertical axis
+
+        dim0_step: the approximate step size for incrementing dimension 0 across it's range
+        dim1_step: the approcimate step size for incrementing dimension 1 accoss it's range
+
+        VALUE_ON_HABITAT: Boolean flag indicating whether SWM2 simulations should be run with 
+            the habitat quality as the recorded simulation value. Default is False, indicating 
+            that the sim values are of costs/income units
+
+
+        RETURNS
+        None, but outputs the file "mc_value_graph.txt"
+
+        """
+        #checks for valid indices
+        _indices_valid = True
+        if self.USING_SWM2_1:
+            if ((dim0 < 0) or (dim0>self.SWM2_dimensions-1) or (dim1 <0) or (dim1>self.SWM2_dimensions-1)):
+                _indices_valid = False
+        else:
+            if ((dim0 < 0) or (dim0>1) or (dim1 <0) or (dim1>1)):
+                _indices_valid = False
+        if not _indices_valid:
+            print("Invalid indices for the current SWM model: dim0:{0}  dim1:{1}".format(dim0,dim1))
+            return None
+
+        timesteps=200
+
+        dim0_range=self.bounds[dim0][:]
+        dim1_range=self.bounds[dim1][:]
 
         start_time = "Started:  " + str(datetime.datetime.now())
 
         #get step counts and starting points
-        p0_step_count = int(  abs(p0_range[1] - p0_range[0]) / p0_step  ) + 1
-        p1_step_count = int(  abs(p1_range[1] - p1_range[0]) / p1_step  ) + 1
-        p0_start = p0_range[0]
-        if p0_range[1] < p0_range[0]: p0_start = p0_range[1]
-        p1_start = p1_range[0]
-        if p1_range[1] < p1_range[0]: p1_start = p1_range[1]
+        dim0_step_count = int(  abs(dim0_range[1] - dim0_range[0]) / dim0_step  ) + 1
+        dim1_step_count = int(  abs(dim1_range[1] - dim1_range[0]) / dim1_step  ) + 1
 
+        #flipping them if they're in reverse o
+        dim0_start = dim0_range[0]
+        if dim0_range[1] < dim0_range[0]: dim0_start = dim0_range[1]
+
+        dim1_start = dim1_range[0]
+        if dim1_range[1] < dim1_range[0]: dim1_start = dim1_range[1]
+
+        dim0_vector = [dim0_start + (i*dim0_step) for i in range(dim0_step_count)]
+        dim1_vector = [dim1_start + (i*dim1_step) for i in range(dim1_step_count)]
 
         #create the rows/columns structure
-        p1_rows = [None] * p1_step_count
-        for i in range(p1_step_count):
-            p1_rows[i] = [None] * p0_step_count
+        val_rows = [ [0.0] * dim0_step_count for i in range(dim1_step_count) ]
+        var_rows = [ [0.0] * dim0_step_count for i in range(dim1_step_count) ]
+        supp_rows = [ [0.0] * dim0_step_count for i in range(dim1_step_count) ]
 
 
-        #step through the polcies and generate monte carlo rollouts, and save their average value
-        pathways = [None]*self.sims_per_sample
-
-        for row in range(p1_step_count):
-            for col in range(p0_step_count):
-                p0_val = p0_start + col*p0_step
-                p1_val = p1_start + row*p1_step
+        #step through the polcies and generate monte carlo rollouts, and save their average values
+        #i could use the dim0_vector and dim1_vectors here, but I need the row/column indices for
+        # when I put the values into val_rows, etc...
+        for row in range(dim1_step_count):
+            for col in range(dim0_step_count):
+                dim0_val = dim0_start + col*dim0_step
+                dim1_val = dim1_start + row*dim1_step
               
-                for i in range(self.sims_per_sample):
-                    pathways[i] = SWM1.simulate(timesteps=timesteps, policy=[p0_val,p1_val], random_seed=(5000+i), SILENT=True)
+                _cur_pol = default_policy[:]
+                _cur_pol[dim0] = dim0_val
+                _cur_pol[dim1] = dim1_val
+                #self.SWM_sample(policy) returns: y, var, policy, supprate
+                _y, _var, _pol, _supp = self.SWM_sample(_cur_pol)
 
-                #get the average value
-                val_sum = 0.0
-                for i in range(self.sims_per_sample):
-                    if VALUE_ON_HABITAT:
-                        val_sum += pathways[i]["Average Habitat Value"]
-                    else:
-                        val_sum += pathways[i]["Average State Value"]
-
-                val_avg = val_sum / self.sims_per_sample
-
-                p1_rows[row][col] = val_avg
+                val_rows[row][col] = _y
+                var_rows[row][col] = _var
+                supp_rows[row][col] = _supp
 
 
         end_time = "Finished: " + str(datetime.datetime.now())
 
         #finished gathering output strings, now write them to the file
-        f = open('pathway_value_graph_1.txt', 'w')
+        f = open('mc_value_graph.txt', 'w')
+        f_var = open('mc_variance_graph.txt', 'w')
+        f_supp = open('mc_supp_rate_graph.txt', 'w')
+        f_all = [f, f_var, f_supp]
 
         #Writing Header
-        f.write("SWMv1_3_Trials.pathway_value_graph_1()\n")
+        header = ""
+        if self.USING_SWM2_1:
+            header = "SWMAnalyst Output of Monte Carlo sims on SWM v2\n"
+        else: 
+            header = "SWMAnalyst Output of Monte Carlo sims on SWM v1\n"
+        f.write(header)
+        f_var.write(header)
+        f_supp.write(header)
         if VALUE_ON_HABITAT:
             f.write("Values are of the Habitat Value index\n")
         else:
-            f.write("Values are of Logging Receipts - Suppression Cost\n")
-        f.write(start_time + "\n")
-        f.write(end_time + "\n")
-        f.write("Pathways per Point: " + str(self.sims_per_sample) +"\n")
-        f.write("Timesteps per Pathway: " + str(timesteps) +"\n")
-        f.write("P0 Range: " + str(p0_range) +"\n")
-        f.write("P1 Range: " + str(p1_range) +"\n")
+            f.write("Values are of Receipts - Costs\n")
+        f_var.write("Values are the variance of the simulations at each point.\n")
+        f_supp.write("Values are the average suppresion rate of the simulations at each point.\n")
 
-        #writing model parameters from whatever's still in the pathway set.
-        # the model parameters don't change from one M.C batch to another.
-        f.write("\n")
-        f.write("Vulnerability Min: " + str(pathways[0]["Vulnerability Min"]) + "\n")
-        f.write("Vulnerability Max: " + str(pathways[0]["Vulnerability Max"]) + "\n")
-        f.write("Vulnerability Change After Suppression: " + str(pathways[0]["Vulnerability Change After Suppression"]) + "\n")
-        f.write("Vulnerability Change After Mild: " + str(pathways[0]["Vulnerability Change After Mild"]) + "\n")
-        f.write("Vulnerability Change After Severe: " + str(pathways[0]["Vulnerability Change After Severe"]) + "\n")
-        f.write("Timber Value Min: " + str(pathways[0]["Timber Value Min"]) + "\n")
-        f.write("Timber Value Max: " + str(pathways[0]["Timber Value Max"]) + "\n")
-        f.write("Timber Value Change After Suppression: " + str(pathways[0]["Timber Value Change After Suppression"]) + "\n")
-        f.write("Timber Value Change After Mild: " + str(pathways[0]["Timber Value Change After Mild"]) + "\n")
-        f.write("Timber Value Change After Severe: " + str(pathways[0]["Timber Value Change After Severe"]) + "\n")
-        f.write("Suppression Cost - Mild: " + str(pathways[0]["Suppression Cost - Mild"]) + "\n")
-        f.write("Suppression Cost - Severe: " + str(pathways[0]["Suppression Cost - Severe"]) + "\n")
-        f.write("Severe Burn Cost: " + str(pathways[0]["Severe Burn Cost"]) + "\n")
-        f.write("\n")
+        for _f in f_all:
+            _f.write(start_time + "\n")
+            _f.write(end_time + "\n")
+            _f.write("Pathways per Point: " + str(self.sims_per_sample) +"\n")
+            _f.write("Timesteps per Pathway: " + str(timesteps) +"\n")
+            _f.write("dim0 Range: " + str(dim0_range) +"\n")
+            _f.write("dim1 Range: " + str(dim1_range) +"\n")
+            _f.write("default policy:" + repr(default_policy) + "\n")
+            _f.write("\n")
+            _f.write("dim0 policy values:" + repr(dim1_vector) + "\n")
+            _f.write("dim1 policy values:" + repr(dim1_vector) + "\n")
+            _f.write("\n")
+            _f.write("Values:\n")
 
-        if not OUTPUT_FOR_SCILAB:
-            #Writing Data for Excel
-            f.write(",,Parameter 0\n")
-            f.write(",,")
-            for i in range(p0_step_count):
-                f.write( str( p0_start + i*p0_step ) + ",")
+        for row in range(dim1_step_count):
+            for col in range(dim0_step_count):
+                f.write(     str(val_rows[row][col]))
+                f_var.write( str(var_rows[row][col]))
+                f_supp.write(str(supp_rows[row][col]))
+                if col < (dim0_step_count - 1):
+                    f.write(" ")
+                    f_var.write(" ")
+                    f_supp.write(" ")
             f.write("\n")
-            f.write("Paramter 1")
-            for row in range(p1_step_count):
-                f.write(",")
-                #write the p1 value
-                f.write( str( p1_start + row*p1_step ) + "," )
+            f_var.write("\n")
+            f_supp.write("\n")
 
-                for col in range(p0_step_count):
-                    f.write( str(p1_rows[row][col]) + "," )
-                f.write("\n")
-        else:
-            #Writing Data for Scilab
-            f.write("Scilab Matrix\n")
-            for row in range(p1_step_count):
-
-                for col in range(p0_step_count):
-                    f.write( str(p1_rows[row][col]) + " " )
-                f.write("\n")
-
+        f_all = []
         f.close()
+        f_var.close()
+        f_supp.close()
 
     #create R file to plot the suppression rate map for SWM1
     def suppression_rate_map(self, timesteps=200, p0_step=0.5, p1_step=0.5):
@@ -726,7 +751,7 @@ class SWMAnalyst:
         #  operation to ensure that sampling is the dense or better, but not worse.
 
         pol_len = 2
-        if self.USING_SWM2_1: pol_len = 6
+        if self.USING_SWM2_1: pol_len = self.SWM2_dimensions
 
         slice_counts = [0] * pol_len
         for i in range(pol_len):
