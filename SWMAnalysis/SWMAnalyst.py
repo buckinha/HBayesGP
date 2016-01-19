@@ -515,6 +515,9 @@ class SWMAnalyst:
         dim0: the integer index value of the policy parameter on the graph's horizontal axis
         dim1: the integer index value of the policy parameter on the graph's vertical axis
 
+        default_policy: default=[0,0,0,0,0,0]  The values to assign to each ppolicy parameter.
+            The values for dim0 and dim1 are ignored.
+
         dim0_step: the approximate step size for incrementing dimension 0 across it's range
         dim1_step: the approcimate step size for incrementing dimension 1 accoss it's range
 
@@ -623,12 +626,13 @@ class SWMAnalyst:
             _f.write("\n")
             _f.write("Values:\n")
 
-        for row in range(dim1_step_count):
-            for col in range(dim0_step_count):
+        
+        for col in range(dim1_step_count):
+            for row in range(dim0_step_count):
                 f.write(     str(val_cols[col][row]))
                 f_var.write( str(var_cols[col][row]))
                 f_supp.write(str(supp_cols[col][row]))
-                if col < (dim0_step_count - 1):
+                if row < (dim0_step_count - 1):
                     f.write(" ")
                     f_var.write(" ")
                     f_supp.write(" ")
@@ -686,6 +690,7 @@ class SWMAnalyst:
             xlab = "Policy Parameter on Habitat"
 
         R_plotting.create_R_plots(dim0_vector, dim1_vector, title, xlab, ylab)
+        print("Process Complete. 10 files written.")
 
     ### PRIVATE FUNCTIONS ###
 
@@ -718,6 +723,8 @@ class SWMAnalyst:
         for i in range(pol_len):
             slice_counts[i] = abs(self.bounds[i][0] - self.bounds[i][1]) / self.grid_sampling_density
             slice_counts[i] = np.ceil(slice_counts[i])
+            #catch the case when bounds have been restricted to something like [0,0] or [10,10]
+            if slice_counts[i] == 0: slice_counts[i] = 1
 
         total_policy_count = 1
         for i in range(pol_len):

@@ -51,7 +51,7 @@ def write_R_script_for_MC_surface_maps(x_vector, y_vector, title="", x_label="",
     f.write("xlab=\"" + x_label + "\",")
     f.write("ylab=\"" + y_label + "\"")
     f.write(")\n")
-    f.write("dev.off()\n")
+    f.write("invisible(dev.off())\n")
 
 
     #png output of the value surface
@@ -63,7 +63,7 @@ def write_R_script_for_MC_surface_maps(x_vector, y_vector, title="", x_label="",
     f.write("xlab=\"" + x_label + "\",")
     f.write("ylab=\"" + y_label + "\"")
     f.write(")\n")
-    f.write("dev.off()\n")
+    f.write("invisible(dev.off())\n")
 
     #png output of the variance surface
     f.write("\n")
@@ -74,7 +74,7 @@ def write_R_script_for_MC_surface_maps(x_vector, y_vector, title="", x_label="",
     f.write("xlab=\"" + x_label + "\",")
     f.write("ylab=\"" + y_label + "\"")
     f.write(")\n")
-    f.write("dev.off()\n")
+    f.write("invisible(dev.off())\n")
 
     #png output of the suppression rate surface
     f.write("\n")
@@ -85,7 +85,7 @@ def write_R_script_for_MC_surface_maps(x_vector, y_vector, title="", x_label="",
     f.write("xlab=\"" + x_label + "\",")
     f.write("ylab=\"" + y_label + "\"")
     f.write(")\n")
-    f.write("dev.off()\n")
+    f.write("invisible(dev.off())\n")
 
 #issues Rscript command to the OS to run the file "mc_surfaces_R_script.R"
 def run_R_script_for_MC_surface_maps():
