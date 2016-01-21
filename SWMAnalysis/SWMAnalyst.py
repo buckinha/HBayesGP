@@ -507,7 +507,7 @@ class SWMAnalyst:
 
 
     #create R file to plot the Monte Carlo value surface
-    def output_MC_surfaces(self, dim0=1, dim1=0, default_policy=[0,0,0,0,0,0], dim0_step=0.5, dim1_step=0.5, VALUE_ON_HABITAT=False):
+    def output_MC_surfaces(self, dim0=0, dim1=1, default_policy=[0,0,0,0,0,0], dim0_step=0.5, dim1_step=0.5, VALUE_ON_HABITAT=False):
         """Step through the SWM policy space and get the monte carlo net values at each policy point
 
 
