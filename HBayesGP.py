@@ -799,6 +799,9 @@ class HBayesGP:
         #prepare the nugget array
         self.nugget = [0.0] * len(self.y)
 
+        #a multiplier to increase the variance
+        nug_alpha = 2.0
+
         #do the calculations. According to the documentation with sklearn.gaussian_process,
         # the value of the nugget for sample i should be (var_i / y_i)^2
         for i in range(len(self.y)):
@@ -806,7 +809,7 @@ class HBayesGP:
             if self.y[i] == 0:
                 self.y[i] += 0.000001
 
-            self.nugget[i] = (self.y_var[i] * self.y_var[i]) / (self.y[i] * self.y[i])
+            self.nugget[i] = nug_alpha * (self.y_var[i] * self.y_var[i]) / (self.y[i] * self.y[i])
             
                 
 
