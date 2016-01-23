@@ -15,8 +15,14 @@ class SWMAnalyst:
 
         ## SAMPLING PARAMETERS ##
         self.sims_per_sample = 20
+        #how many LB or SA sims before the rest are skipped. Set to -1 to ignore this parameter
+        self.assume_policy_after = 5
+        #using the larger model?
         self.USING_SWM2_1 = False
         self.SWM2_dimensions = 6
+
+        #flag for whether to be grabbing the discounted or average stae value
+        self.USING_DISCOUNTING = False
 
         ## OUT-OF-BOUNDS PARAMETERS ##
         #whether or not to filter out-of-bounds policies. If True, these policies
@@ -32,7 +38,7 @@ class SWMAnalyst:
         self.OOB_alpha = 0.5
 
         ## SA/LB FILTER PARAMETERS ##
-        self.USING_CLASSIFIER = False
+        self.USING_CLASSIFIER = True
         self.classifier_type = "random forest"
         #the default values for the simlulation means of SA and LB sims will
         #be updated as new simulations are actually run. The values below are set
@@ -59,6 +65,8 @@ class SWMAnalyst:
         self.classification = []
         self.in_bounds = [] #True for a sample that is in-bounds
         self.real_sample = [] #True for an actual sample, False for one that's been predicted
+        self.SA_values = [] #individual simulation values from sims which were SA
+        self.LB_values = [] #individual simulation values from sims which were LB
 
         ## BOUNDARIES ##
         self.bounds = []
@@ -129,17 +137,60 @@ class SWMAnalyst:
 
         
         sims = []
-        if self.USING_SWM2_1:
-            #SWMv2_1.simulate() function signature is:
-            #def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}, SILENT=False, PROBABILISTIC_CHOICES=True):
-            sims = [SWM2.simulate(200, policy, random.random(), SILENT=True) for i in range(self.sims_per_sample)]
+        simulator = SWM1
+        if self.USING_SWM2_1: simulator = SWM2
+
+        #SWMv2_1.simulate() function signature is:
+        #def simulate(timesteps, policy=[0,0,0,0,0,0], random_seed=0, model_parameters={}, SILENT=False, PROBABILISTIC_CHOICES=True):
+        if (self.assume_policy_after < 1) or (self.assume_policy_after >= self.sims_per_sample):
+            #not ignoring any sims, even if the first several are all SA or all LB
+            sims = [simulator.simulate(200, policy, random.random(), SILENT=True) for i in range(self.sims_per_sample)]
         else:
-            #SWMv1_3.simulate() function signature is:
-            #simulate(timesteps, policy=[0,0], random_seed=0, model_parameters={}, SILENT=False, PROBABILISTIC_CHOICES=True
-            sims = [SWM1.simulate(200, policy, random.random(), SILENT=True) for i in range(self.sims_per_sample)]
+            #if the first 'n' simulations are uniformally SA or LB, we'll ignore the rest
+            _LB_count = 0
+            _SA_count = 0
+            #get the first simulations
+            sims1 = [simulator.simulate(200, policy, random.random(), SILENT=True) for i in range(self.assume_policy_after)]
 
+            #check for SA and LB
+            for s in sims1:
+                if s["Suppression Rate"] > 0.995: _SA_count += 1
+                if s["Suppression Rate"] < 0.005: _LB_count += 1
 
-        data = [  sims[i]["Average State Value"]  for i in range(self.sims_per_sample) ] 
+            if _SA_count == self.assume_policy_after:
+                #this is going to be assumed as an SA policy, so add these values to the list of SA sim values
+                if self.USING_DISCOUNTING:
+                    _vals = [ s["Discounted Value"] for s in sims1 ]
+                    self.SA_values = self.SA_values + _vals
+                else:
+                    _vals = [ s["Average State Value"] for s in sims1 ]
+                    self.SA_values = self.SA_values + _vals
+                y = np.mean(self.SA_values)
+                var = np.var(self.SA_values)
+                return y, var, policy, 1.0
+
+            elif _LB_count == self.assume_policy_after:
+                #this is going to be assumed as an LB policy...
+                if self.USING_DISCOUNTING:
+                    _vals = [ s["Discounted Value"] for s in sims1 ]
+                    self.LB_values = self.LB_values + _vals
+                else:
+                    _vals = [ s["Average State Value"] for s in sims1 ]
+                    self.LB_values = self.LB_values + _vals
+                y = np.mean(self.LB_values)
+                var = np.var(self.LB_values)
+                return y, var, policy, 0.0
+
+            else:
+                #the first "n" sims didn't qualify as all SA or all LB, so simulate the rest and continue
+                sims2 = [simulator.simulate(200, policy, random.random(), SILENT=True) for i in range(self.sims_per_sample - self.assume_policy_after)]
+                sims = sims1 + sims2
+
+        data = []
+        if self.USING_DISCOUNTING: 
+            data = [  sims[i]["Discounted Value"]  for i in range(self.sims_per_sample) ] 
+        else:
+            data = [  sims[i]["Average State Value"]  for i in range(self.sims_per_sample) ] 
         suppression_rates = [  sims[i]["Suppression Rate"] for i in range(self.sims_per_sample) ]
 
         #now get mean and variance
@@ -260,8 +311,12 @@ class SWMAnalyst:
                 elif pol_type == LB_POL:
                     #it's been classified as an LB policy, so use the current estimate of the 
                     #LB mean and variance, etc...
-                    new_y.append(self.LB_default_mean + 1 - 1)
-                    new_y_var.append(self.edge_default_var + 1 - 1)
+                    if len(self.LB_values) > 0:
+                        new_y.append(np.mean(self.LB_values))
+                        new_y_var.append(np.var(self.LB_values))
+                    else:
+                        new_y.append(self.LB_default_mean + 1 - 1)
+                        new_y_var.append(self.edge_default_var + 1 - 1)
                     new_X.append(p[:])
                     new_supprate.append(0.0)
                     new_class.append(LB_POL)
@@ -271,8 +326,12 @@ class SWMAnalyst:
                 elif pol_type == SA_POL:
                     #it's been classified as an SA policy, so use the current estimate of the
                     # SA mean and variance
-                    new_y.append(self.SA_default_mean + 1 - 1)
-                    new_y_var.append(self.edge_default_var + 1 - 1)
+                    if len(self.SA_values) > 0:
+                        new_y.append(np.mean(self.SA_values))
+                        new_y_var.append(np.var(self.SA_values))
+                    else:
+                        new_y.append(self.SA_default_mean + 1 - 1)
+                        new_y_var.append(self.edge_default_var + 1 - 1)
                     new_X.append(p[:])
                     new_supprate.append(1.0)
                     new_class.append(SA_POL)
