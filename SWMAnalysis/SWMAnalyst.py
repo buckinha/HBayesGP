@@ -1,6 +1,6 @@
 import SWMv1_3 as SWM1
 import SWMv2_1 as SWM2
-import HBayesGP, R_plotting
+import HBayesGP, R_plotting, neighbor_distances
 import random, datetime
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -514,6 +514,10 @@ class SWMAnalyst:
         real_sims = len([i for i in self.real_sample if i])
         est_sims = all_sims - real_sims
 
+        assumption_sims = len(self.SA_values) + len(self.LB_values)
+        full_sample_sims = real_sims - assumption_sims
+        total_sims_run = (self.sims_per_sample * full_sample_sims) + (self.assume_policy_after * assumption_sims)
+
         sa_sims = len([c for c, r in zip(self.classification, self.real_sample) if ((c == SA_POL) and (r))])
         lb_sims = len([c for c, r in zip(self.classification, self.real_sample) if ((c == LB_POL) and (r))])
         good_sims = len([c for c, r in zip(self.classification, self.real_sample) if ((c == GOOD_POL) and (r))])
@@ -525,7 +529,7 @@ class SWMAnalyst:
         print("Dataset Size, Est:  {0}  ({1}%)".format(est_sims, (round((100 * est_sims / all_sims),3))))
         print("")
         print("Actual SWM simulations per sample point: {0}".format(self.sims_per_sample))
-        print("Total SWM simulations rum: {0}".format(self.sims_per_sample * real_sims))
+        print("Total SWM simulations run: {0}".format(total_sims_run))
         print("Highest Value Seen: {0}".format(max(self.y)))
         print("Highest Val. Policy: {0}".format(repr(self.GP.current_global_best_coord)))
         print("")
@@ -558,10 +562,11 @@ class SWMAnalyst:
         self.supprate = []
         self.classification = []
         self.in_bounds = []
-        self.real_sample = [] #True for an actual sample, False for one that's been predicted
+        self.real_sample = [] 
+        self.SA_values = []
+        self.LB_values = []
 
         ## GAUSSIAN PROCESS OBJECT ##
-        #this will be instantiated the first time that data is recieved
         self.GP = None
 
 
