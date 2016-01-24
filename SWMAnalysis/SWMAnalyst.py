@@ -1,6 +1,7 @@
 import SWMv1_3 as SWM1
 import SWMv2_1 as SWM2
-import HBayesGP, R_plotting, neighbor_distances
+import HBayesGP, R_plotting
+from neighbor_dist import neighbor_distances
 import random, datetime
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -23,6 +24,10 @@ class SWMAnalyst:
 
         #flag for whether to be grabbing the discounted or average stae value
         self.USING_DISCOUNTING = False
+
+        #flag to indicade that data has changed and neighbor distances need to be re-computed
+        self.RECALC_NEIGHBOR_DISTANCES = True
+        self.all_distances = {}
 
         ## OUT-OF-BOUNDS PARAMETERS ##
         #whether or not to filter out-of-bounds policies. If True, these policies
@@ -53,7 +58,7 @@ class SWMAnalyst:
         self.RFC_depth = 20
 
         ## Initilaize classifier ##
-        self.classfier = None
+        self.classifier = None
         self._init_classifier()
         
 
@@ -224,6 +229,9 @@ class SWMAnalyst:
         None
         """
 
+        #flag for re-calculation of neighbor distances, since it's likely that the data will change
+        self.RECALC_NEIGHBOR_DISTANCES = True
+
         pol_len = 2
         if self.USING_SWM2_1: pol_len = self.SWM2_dimensions
 
@@ -276,7 +284,9 @@ class SWMAnalyst:
             for p in pols:
 
                 #check filters
-                pol_type = self.classify_policy(p)
+                pol_type = GOOD_POL
+                if len(self.y) > 0:
+                    pol_type = self.classify_policy(p)
 
                 #check bounds
                 pol_oob = self.check_if_OOB_policy(p)
@@ -371,7 +381,7 @@ class SWMAnalyst:
             #re-fit the GP and classifier models
             self.fit_GP() # <-- if there's no GP, then this function will also add ALL the data to a new one.
 
-            print("Fitting Classfier...")
+            print("Fitting Classifier...")
             if self.USING_CLASSIFIER: self.fit_classifier()
 
             print("Additional Data Acquisition is Complete.")
@@ -394,7 +404,7 @@ class SWMAnalyst:
         """
 
         #make sure the classifier has been initilaized
-        if not self.classifier: self._init_classifier()
+        if not hasattr(self, 'classifier'): self._init_classifier()
 
         #in other words, take self.X[i] if self.real_sample == True, and make a list out of it
         # and make that into a numpy array.
@@ -416,9 +426,9 @@ class SWMAnalyst:
             GOOD_POL, SA_POL, LB_POL
         """
         
-        #policy is in-bounds; run the classfier if we're using one.
+        #policy is in-bounds; run the classifier if we're using one.
         if self.USING_CLASSIFIER:
-            pol_type = self.classfier.predict([policy])
+            pol_type = self.classifier.predict([policy])
             #it returns a list of predictions from a list of policies
             # so just return the first element of that list, which should be the prediction
             return pol_type[0]  
@@ -514,9 +524,16 @@ class SWMAnalyst:
         real_sims = len([i for i in self.real_sample if i])
         est_sims = all_sims - real_sims
 
-        assumption_sims = len(self.SA_values) + len(self.LB_values)
-        full_sample_sims = real_sims - assumption_sims
-        total_sims_run = (self.sims_per_sample * full_sample_sims) + (self.assume_policy_after * assumption_sims)
+        #calculate the number of simulations that have been run, all told
+        total_sims_run = 0
+        if self.assume_policy_after > 0:
+            #some samples may only have been the result of a few simulations
+            assumption_sims = len(self.SA_values) + len(self.LB_values)
+            full_sample_sims = real_sims - assumption_sims
+            total_sims_run = (self.sims_per_sample * full_sample_sims) + (self.assume_policy_after * assumption_sims)
+        else:
+            #not using that feature
+            total_sims_run = self.sims_per_sample * real_sims
 
         sa_sims = len([c for c, r in zip(self.classification, self.real_sample) if ((c == SA_POL) and (r))])
         lb_sims = len([c for c, r in zip(self.classification, self.real_sample) if ((c == LB_POL) and (r))])
@@ -543,6 +560,45 @@ class SWMAnalyst:
         print("")
         print("Most Recent Length Scale: {0}".format(self.GP.gp_length_scale))
         print("Bounds: {0}".format(repr(self.bounds)))
+        distances = self.get_all_neighbor_distances()
+        print("")
+        print("Average Dist to Neighbors:         " + str(distances["Average Distance"]))
+        print("Average Dist to Furthest Neighbor: " + str(distances["Average Furthest"]))
+        print("Average Dist to Nearest Neighbor:  " + str(distances["Average Nearest"]))
+        print("Furthest two points: " + str(distances["Absolute Furthest"] ))
+        print("Closest two points: " + str(distances["Absolute Nearest"]))
+        print("Distance to the closest, 'furthest neighbor': " + str(distances["Shortest Furthest"]))
+        print("Distance to the furthest, 'closest neighbor': " + str(distances["Furthest Nearest"]))
+
+
+    #how many sims have been run all together (including with assumptions, etc...)?
+    def get_sim_count(self):
+        #get counts
+        total_sims_run = 0
+        real_sims = len([i for i in self.real_sample if i])
+        if self.assume_policy_after > 0:
+            #some samples may only have been the result of a few simulations
+            assumption_sims = len(self.SA_values) + len(self.LB_values)
+            full_sample_sims = real_sims - assumption_sims
+            total_sims_run = (self.sims_per_sample * full_sample_sims) + (self.assume_policy_after * assumption_sims)
+        else:
+            #not using that feature
+            total_sims_run = self.sims_per_sample * real_sims
+
+        return total_sims_run
+
+    #calculate all neighbor distances
+    def get_all_neighbor_distances(self):
+        if self.RECALC_NEIGHBOR_DISTANCES:
+            self.all_distances = neighbor_distances(self.X)
+            self.RECALC_NEIGHBOR_DISTANCES = False
+
+        return self.all_distances
+
+    #over all the points, what's the average dist to nearest neighbor?
+    def get_ave_nearest_neighbor_dist(self):
+        distances = self.get_all_neighbor_distances()
+        return distances["Average Nearest"]
 
     #plot the first two dimensions of the GP
     def plot_gp(self, dim0=1, dim1=0):
@@ -552,7 +608,7 @@ class SWMAnalyst:
     def clear_data(self):
 
         ## Re-nitilaize classifier ##
-        self.classfier = None
+        self.classifier = None
         self._init_classifier()
         
         ## DATA ##
@@ -761,7 +817,7 @@ class SWMAnalyst:
     #instantiates the classifier object(s)
     def _init_classifier(self):
         if self.classifier_type == "random forest":
-            self.classfier = RandomForestClassifier(max_depth=self.RFC_depth, n_estimators=self.RFC_estimators)
+            self.classifier = RandomForestClassifier(max_depth=self.RFC_depth, n_estimators=self.RFC_estimators)
         else:
             print("ERROR: Unknown classifer value: " + str(self.classifier_type))
 
