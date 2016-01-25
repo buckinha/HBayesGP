@@ -2,9 +2,11 @@ import SWMv1_3 as SWM1
 import SWMv2_1 as SWM2
 import HBayesGP, R_plotting
 from neighbor_dist import neighbor_distances
-import random, datetime
+import random, datetime, Queue
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+
+
 
 GOOD_POL = 0
 LB_POL = 1
@@ -162,7 +164,7 @@ class SWMAnalyst:
                 if s["Suppression Rate"] > 0.995: _SA_count += 1
                 if s["Suppression Rate"] < 0.005: _LB_count += 1
 
-            if _SA_count == self.assume_policy_after:
+            if _SA_count >= self.assume_policy_after:
                 #this is going to be assumed as an SA policy, so add these values to the list of SA sim values
                 if self.USING_DISCOUNTING:
                     _vals = [ s["Discounted Value"] for s in sims1 ]
@@ -174,7 +176,7 @@ class SWMAnalyst:
                 var = np.var(self.SA_values)
                 return y, var, policy, 1.0
 
-            elif _LB_count == self.assume_policy_after:
+            elif _LB_count >= self.assume_policy_after:
                 #this is going to be assumed as an LB policy...
                 if self.USING_DISCOUNTING:
                     _vals = [ s["Discounted Value"] for s in sims1 ]
@@ -811,6 +813,9 @@ class SWMAnalyst:
 
         R_plotting.create_R_plots(dim0_vector, dim1_vector, title, xlab, ylab)
         print("Process Complete. 10 files written.")
+
+
+
 
     ### PRIVATE FUNCTIONS ###
 
