@@ -307,10 +307,10 @@ class SWMAnalyst:
 
                     else:
                         #using the squared distance penalty
-                        print("...a policy is OOB")
+                        #print("...a policy is OOB")
                         _y, _var, _X, _supp = self.SWM_sample(p)
                         penalty = self.penalize_OOB_sim_value(p)
-                        print("sim val: {0}   penalty: {1}   policy: {2}".format(_y, penalty, p))
+                        #print("sim val: {0}   penalty: {1}   policy: {2}".format(_y, penalty, p))
                         new_y.append(_y - penalty)
                         new_y_var.append(self.OOB_default_var + 1 - 1)
                         new_X.append(_X)

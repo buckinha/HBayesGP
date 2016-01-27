@@ -779,21 +779,22 @@ class HBayesGP:
         
         def _lbfgs(x0):
             result = minimize(lambda x: -1 * self.predict(x)[0], x0=x0, method='L-BFGS-B', bounds=self.bounds)
-            return (-1.0*result.fun), result.x
+            return [(-1.0*result.fun)] + result.x.tolist()
 
         climb_results = [ _lbfgs(sample) for sample in self.X ]
         climb_results.sort(reverse=True)
 
         #eliminate redundant points
-        coord_list = [c[1] for c in climb_results]
+        coord_list = [c[1:] for c in climb_results]
         coord_list_trimmed = self._trim_redundant(coord_list, distance=self.redundancy_dist)
         final_list = []
         for c_t in coord_list_trimmed:
             for result in climb_results:
                 #check all the results, and find the first one that matches this coordinate. skip the rest.
-                if (result[1] == c_t).all(): #the comparison over arrays will give an array of bools. .all() checks if they all equal True
+                #if (result[1:] == c_t).all(): #the comparison over arrays will give an array of bools. .all() checks if they all equal True
+                if result[1:] == c_t:
                     final_list.append(result)
-                    continue
+                    break
 
         #trim the list down to size, if necessary. The highest values should still be first
         if len(final_list) > limit_to:
