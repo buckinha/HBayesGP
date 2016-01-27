@@ -79,7 +79,7 @@ class SWMAnalyst:
         self.bounds = []
         self.default_upper_bound_value =  25.0
         self.default_lower_bound_value = -25.0
-        self.default_penalty_distance = 3
+        self.default_penalty_distance = 2.0
         self.penalty_bounds = []
         self.set_bounds()
 
@@ -445,10 +445,16 @@ class SWMAnalyst:
         pol_len = 2
         if self.USING_SWM2_1: pol_len = self.SWM2_dimensions
 
-        for i in range(pol_len):
-            #      pol[i] < lower bound for i  or     pol[i] > upper bound for i
-            if (policy[i] < self.bounds[i][0]) or (policy[i] > self.bounds[i][1]):
-                return True
+        if self.USING_OOB_PENALTY:
+            for i in range(pol_len):
+                #      pol[i] < lower bound for i  or     pol[i] > upper bound for i
+                if (policy[i] < self.penalty_bounds[i][0]) or (policy[i] > self.penalty_bounds[i][1]):
+                    return True
+        else:
+            for i in range(pol_len):
+                #      pol[i] < lower bound for i  or     pol[i] > upper bound for i
+                if (policy[i] < self.bounds[i][0]) or (policy[i] > self.bounds[i][1]):
+                    return True
 
         #we've completed the loop without returning True, so this must be in bounds
         return False
@@ -497,6 +503,7 @@ class SWMAnalyst:
             plb = lb + self.default_penalty_distance
             pub = ub - self.default_penalty_distance
             if self.USING_SWM2_1:
+                #TODO make this robust to varying policy lengths
                 self.bounds = [[lb,ub],[lb,ub],[lb,ub],[lb,ub],[lb,ub],[lb,ub]]
                 self.penalty_bounds = [[plb,pub],[plb,pub],[plb,pub],[plb,pub],[plb,pub],[plb,pub]]
             else:
