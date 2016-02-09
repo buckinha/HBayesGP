@@ -254,7 +254,7 @@ class SWMAnalyst:
                 #ask the gp object for it's next guesses
                 # HBayesGP.suggest_next(self,number_of_suggestions, minimum_climbs=40):
                 print("Querying GP for new sample positions.")
-                pols = self.GP.suggest_next(sample_count, minimum_climbs=10, CLIMB_FROM_CURRENT_DATA=False)
+                pols = self.GP.suggest_next(sample_count, minimum_climbs=50, CLIMB_FROM_CURRENT_DATA=False)
             elif policy_type == "grid":
                 print("Getting grid coordinates.")
                 pols = self._grid_sampling_coordinates()

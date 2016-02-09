@@ -263,12 +263,13 @@ class HBayesGP:
         if False:
             for g_best in self.global_bests.queue:
 
+                pass
                 #do a climb from g_best
                 #ending_point = minimize(self._max_conf, x0=g_best[2], method='L-BFGS-B', bounds=self.bounds).x
-                ending_point = self._climb_uconf(g_best[2])
+                #ending_point = self._climb_uconf(g_best[2])
 
                 #add the result.x to the list
-                suggestions.append(ending_point)
+                #suggestions.append(ending_point)
 
 
         #do climbs from random starting points
@@ -857,8 +858,12 @@ class HBayesGP:
 
     #Add this value to the list of top values if it is high enough, and retain order
     def _record_if_better(self,y,y_var,x):
+        #check if x is already a list
+        if not isinstance(x,list):
+            x = x.tolist()
+
         #add this value to the priority queue
-        self.global_bests.put([y,y_var,x])
+        self.global_bests.put([y,y_var]+x)
 
         #remove the lowest of these best values to keep the list the same length
         if self.global_bests.qsize() >= self.global_bests_count:
@@ -1073,5 +1078,23 @@ class HBayesGP:
         #result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.lbfgs_bounds)
         result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.bounds)
 
+        #l-bfgs-b optional arguments are:
+        # (from: http://docs.scipy.org/doc/scipy-0.16.1/reference/optimize.minimize-lbfgsb.html#optimize-minimize-lbfgsb)
+        #options={'disp': None, 'iprint': -1, 'gtol': 1e-05, 'eps': 1e-08, 'maxiter': 15000, 'ftol': 2.220446049250313e-09, 'maxcor': 10, 'maxfun': 15000}
+
+        #reducing maxiter
+        #result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.bounds, options={'maxiter':5000})
+
+        #reducing maxfun
+        #result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.bounds, options={'maxfun':5000})
+
+        #reducing maxcor
+        #result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.bounds, options={'maxcor':5})
+
+        #reducing gtol
+        #result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.bounds, options={'gtol':0.01})
+        
+        #reducing ftol
+        #result = minimize(neg_uconf, x0=x, method='L-BFGS-B', bounds=self.bounds, options={'ftol':0.01})
 
         return result.x
