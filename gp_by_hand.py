@@ -1,4 +1,4 @@
-
+import numpy as np
 
 from SWMAnalysis import SWMAnalyst as SWMA
 
