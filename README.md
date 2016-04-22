@@ -1,5 +1,5 @@
 # HBayesGP
-An implementation of Bayesian optimization with point-wise variances.
+An implementation of Bayesian optimization over a Gaussian process model with explicit point-wise variances.
 
 ###UNFINISHED WORK
 This code is in an early stage, and is not yet suitable for use for opimization.
